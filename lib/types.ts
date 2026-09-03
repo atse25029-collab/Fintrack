@@ -89,6 +89,7 @@ export interface MonthlyDue {
   status: 'pending' | 'paid';
   lastPaidDate?: string; // YYYY-MM-DD
   notes?: string;
+  createdAt?: number;
 }
 
 export interface MonthlyDueReminder {

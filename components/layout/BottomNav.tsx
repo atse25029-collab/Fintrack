@@ -1,7 +1,6 @@
 'use client';
 
-import React from 'react';
-import { LayoutDashboard, Users, Calendar, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Users, Calendar, BarChart3, User } from 'lucide-react';
 import { AppSection } from './Header';
 
 interface BottomNavProps {
@@ -36,6 +35,11 @@ export default function BottomNav({
       id: 'analytics' as AppSection,
       label: 'Analytics',
       icon: BarChart3,
+    },
+    {
+      id: 'profile' as AppSection,
+      label: 'Profile',
+      icon: User,
     },
   ];
 

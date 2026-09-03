@@ -23,6 +23,9 @@ import TabModal from '@/components/tabs/TabModal';
 import MonthlyDuesManager from '@/components/dues/MonthlyDuesManager';
 import MonthlyDueModal from '@/components/dues/MonthlyDueModal';
 import AnalyticsView from '@/components/analytics/AnalyticsView';
+import ProfileSection from '@/components/profile/ProfileSection';
+import { isSupabaseConfigured } from '@/lib/supabase/client';
+import { fetchAllCloudData } from '@/lib/supabase/dbService';
 
 import {
   Transaction,
@@ -628,6 +631,43 @@ export default function HomePage() {
     }).catch(() => {});
   }, []);
 
+  const handleCloudSyncSuccess = useCallback(
+    (cloudData: {
+      transactions?: Transaction[];
+      wallets?: WalletBalances;
+      tabs?: TabItem[];
+      dues?: MonthlyDue[];
+      presets?: QuickPreset[];
+      budget?: BudgetConfig;
+    }) => {
+      if (cloudData.transactions) {
+        setTransactions(cloudData.transactions);
+        setLocalTransactions(cloudData.transactions);
+      }
+      if (cloudData.wallets) {
+        setWallets(cloudData.wallets);
+        setLocalWallets(cloudData.wallets);
+      }
+      if (cloudData.tabs) {
+        setTabs(cloudData.tabs);
+        setLocalTabs(cloudData.tabs);
+      }
+      if (cloudData.dues) {
+        setDues(cloudData.dues);
+        setLocalDues(cloudData.dues);
+      }
+      if (cloudData.presets) {
+        setPresets(cloudData.presets);
+        setLocalQuickPresets(cloudData.presets);
+      }
+      if (cloudData.budget) {
+        setBudget(cloudData.budget);
+        setLocalBudget(cloudData.budget);
+      }
+    },
+    []
+  );
+
   const dailySummary = useMemo(() => calculateDailySummary(transactions, budget), [transactions, budget]);
   const financialStats = useMemo(() => calculateFinancialStats(transactions), [transactions]);
   const categoryExpenses = useMemo(() => calculateCategoryBreakdown(transactions, 'expense'), [transactions]);
@@ -783,6 +823,22 @@ export default function HomePage() {
         {currentSection === 'analytics' && (
           <div className="animate-in fade-in duration-150 w-full max-w-full overflow-hidden">
             <AnalyticsView transactions={transactions} budget={budget} />
+          </div>
+        )}
+
+        {/* VIEW 5: PROFILE & CLOUD DATABASE SYNC */}
+        {currentSection === 'profile' && (
+          <div className="animate-in fade-in duration-150 w-full max-w-full overflow-hidden">
+            <ProfileSection
+              transactions={transactions}
+              wallets={wallets}
+              tabs={tabs}
+              dues={dues}
+              presets={presets}
+              budget={budget}
+              onCloudSyncSuccess={handleCloudSyncSuccess}
+              onClearAllData={handleClearAll}
+            />
           </div>
         )}
       </main>

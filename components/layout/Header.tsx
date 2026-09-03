@@ -12,9 +12,10 @@ import {
   Calendar,
   BarChart3,
   Clock,
+  User,
 } from 'lucide-react';
 
-export type AppSection = 'daily' | 'tabs' | 'dues' | 'analytics';
+export type AppSection = 'daily' | 'tabs' | 'dues' | 'analytics' | 'profile';
 
 interface HeaderProps {
   currentSection: AppSection;
@@ -59,6 +60,7 @@ export default function Header({
     { id: 'tabs', label: 'Tabs (Lent & Borrowed)', icon: Users },
     { id: 'dues', label: 'Monthly Dues', icon: Calendar, alert: dueAlertCount },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+    { id: 'profile', label: 'Profile & Cloud Sync', icon: User },
   ];
 
   const activeSectionObj = sections.find((s) => s.id === currentSection) || sections[0];
