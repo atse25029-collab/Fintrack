@@ -108,6 +108,7 @@ export default function HomePage() {
         if (synced.transactions?.length) setTransactions(synced.transactions);
         if (synced.tabs?.length) setTabs(synced.tabs);
         if (synced.dues?.length) setDues(synced.dues);
+        if (synced.budget) setBudget(synced.budget);
       }
     });
 

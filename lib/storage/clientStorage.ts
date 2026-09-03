@@ -48,9 +48,10 @@ export function getLocalBudget(): BudgetConfig {
     const raw = localStorage.getItem(LOCAL_BUDGET_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.dailyAllowance) {
+      if (parsed && typeof parsed.dailyAllowance === 'number' && parsed.dailyAllowance > 0) {
         return {
-          ...parsed,
+          monthlyLimit: typeof parsed.monthlyLimit === 'number' ? parsed.monthlyLimit : DEFAULT_BUDGET.monthlyLimit,
+          dailyAllowance: parsed.dailyAllowance,
           currency: 'INR',
           currencySymbol: '₹',
         };
@@ -59,7 +60,6 @@ export function getLocalBudget(): BudgetConfig {
   } catch (e) {
     console.error('Error reading budget:', e);
   }
-  setLocalBudget(DEFAULT_BUDGET);
   return DEFAULT_BUDGET;
 }
 
@@ -188,11 +188,12 @@ export function setLocalQuickPresets(presets: QuickPreset[]): void {
 // Sync with Vercel API
 export async function syncWithVercelServer(
   onStatusChange?: (status: 'idle' | 'syncing' | 'synced' | 'offline' | 'error') => void
-): Promise<{ transactions: Transaction[]; tabs: TabItem[]; dues: MonthlyDue[] }> {
+): Promise<{ transactions: Transaction[]; tabs: TabItem[]; dues: MonthlyDue[]; budget?: BudgetConfig }> {
   const fallback = {
     transactions: getLocalTransactions(),
     tabs: getLocalTabs(),
     dues: getLocalDues(),
+    budget: getLocalBudget(),
   };
 
   if (typeof window === 'undefined' || !navigator.onLine) {
@@ -234,6 +235,16 @@ export async function syncWithVercelServer(
       if (duesData.data && Array.isArray(duesData.data)) {
         setLocalDues(duesData.data);
         fallback.dues = duesData.data;
+      }
+    }
+
+    // 4. Fetch budget
+    const budgetRes = await fetch('/api/budget');
+    if (budgetRes.ok) {
+      const budgetData = await budgetRes.json();
+      if (budgetData.data && typeof budgetData.data.dailyAllowance === 'number') {
+        setLocalBudget(budgetData.data);
+        fallback.budget = budgetData.data;
       }
     }
 

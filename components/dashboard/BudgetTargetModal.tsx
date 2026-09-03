@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BudgetConfig } from '@/lib/types';
 import { X, Target, Check } from 'lucide-react';
 
@@ -24,12 +24,23 @@ export default function BudgetTargetModal({
     currentBudget.monthlyLimit.toString()
   );
 
+  // Synchronize with currentBudget whenever modal opens or currentBudget updates
+  useEffect(() => {
+    if (isOpen) {
+      setDailyAllowance(currentBudget.dailyAllowance.toString());
+      setMonthlyLimit(currentBudget.monthlyLimit.toString());
+    }
+  }, [isOpen, currentBudget]);
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const daily = parseFloat(dailyAllowance) || 0;
-    const monthly = parseFloat(monthlyLimit) || 0;
+    const daily = parseFloat(dailyAllowance);
+    const monthly = parseFloat(monthlyLimit);
+
+    if (isNaN(daily) || daily <= 0) return;
+    if (isNaN(monthly) || monthly <= 0) return;
 
     onSaveBudget({
       dailyAllowance: daily,
@@ -84,7 +95,7 @@ export default function BudgetTargetModal({
               />
             </div>
             <p className="text-[11px] text-zinc-500">
-              Recommended daily allowance for meals, chai, transit &amp; miscellaneous.
+              Your personal daily spending allowance (persists across reloads).
             </p>
           </div>
 
