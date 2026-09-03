@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { TabItem, TabType } from '@/lib/types';
+import { TabItem } from '@/lib/types';
 import { formatCurrency, formatDateLabel } from '@/lib/utils';
+import SettleTabModal from './SettleTabModal';
 import {
   Users,
   Plus,
@@ -17,7 +18,11 @@ import {
 interface TabsManagerProps {
   tabs: TabItem[];
   onSaveTab: (tab: Partial<TabItem>) => void;
-  onSettleTab: (id: string) => void;
+  onSettleTab: (
+    tab: TabItem,
+    paymentMethod: 'Cash' | 'UPI / Bank',
+    recordTransaction: boolean
+  ) => void;
   onDeleteTab: (id: string) => void;
   onOpenAddModal: () => void;
   onEditTab: (tab: TabItem) => void;
@@ -33,6 +38,7 @@ export default function TabsManager({
 }: TabsManagerProps) {
   const [filter, setFilter] = useState<'pending' | 'owed_to_you' | 'you_owe' | 'settled'>('pending');
   const [searchTerm, setSearchTerm] = useState('');
+  const [tabToSettle, setTabToSettle] = useState<TabItem | null>(null);
 
   const summary = useMemo(() => {
     let toCollect = 0;
@@ -101,7 +107,7 @@ export default function TabsManager({
         </button>
       </div>
 
-      {/* Summary Cards: Clean responsive grid */}
+      {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-4">
         {/* Net Due Balance */}
         <div className="p-4 sm:p-5 bg-zinc-900 text-white rounded-2xl border border-zinc-900 shadow-sm space-y-0.5">
@@ -152,7 +158,6 @@ export default function TabsManager({
       {/* Filter and Search Bar */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-zinc-200 shadow-sm space-y-3.5 w-full max-w-full overflow-hidden">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-          {/* Filter Pills */}
           <div className="grid grid-cols-2 sm:flex p-1 bg-zinc-100 rounded-xl border border-zinc-200 text-xs font-medium gap-0.5">
             <button
               onClick={() => setFilter('pending')}
@@ -196,7 +201,6 @@ export default function TabsManager({
             </button>
           </div>
 
-          {/* Search Box */}
           <div className="relative flex-1 sm:max-w-xs">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input
@@ -279,7 +283,7 @@ export default function TabsManager({
                     </div>
                   </div>
 
-                  {/* Right: Amount & Settle */}
+                  {/* Right: Amount & Settle Trigger */}
                   <div className="flex items-center gap-2 shrink-0">
                     <div className="text-right">
                       <div
@@ -297,8 +301,8 @@ export default function TabsManager({
 
                     {!isSettled ? (
                       <button
-                        onClick={() => onSettleTab(tab.id)}
-                        className="flex items-center gap-1 px-2 py-1 bg-black text-white text-[10px] sm:text-[11px] font-semibold rounded-lg hover:bg-zinc-800 active:scale-95 transition-all shadow-xs"
+                        onClick={() => setTabToSettle(tab)}
+                        className="flex items-center gap-1 px-2.5 py-1 bg-black text-white text-[11px] font-semibold rounded-lg hover:bg-zinc-800 active:scale-95 transition-all shadow-xs"
                       >
                         <CheckCircle2 className="w-3 h-3" />
                         <span>Settle</span>
@@ -330,6 +334,14 @@ export default function TabsManager({
           </div>
         )}
       </div>
+
+      {/* Settle Tab Modal */}
+      <SettleTabModal
+        isOpen={Boolean(tabToSettle)}
+        onClose={() => setTabToSettle(null)}
+        tab={tabToSettle}
+        onConfirmSettle={onSettleTab}
+      />
     </div>
   );
 }

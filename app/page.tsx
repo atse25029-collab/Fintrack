@@ -391,20 +391,75 @@ export default function HomePage() {
     });
   }, []);
 
-  const handleSettleTab = useCallback((id: string) => {
-    setTabs((prev) => {
-      const updated = prev.map((t) =>
-        t.id === id ? { ...t, status: 'settled' as const, settledAt: Date.now() } : t
-      );
-      setLocalTabs(updated);
-      fetch('/api/tabs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'settle', id }),
-      }).catch(() => {});
-      return updated;
-    });
-  }, []);
+  const handleSettleTab = useCallback(
+    (
+      tab: TabItem,
+      paymentMethod: 'Cash' | 'UPI / Bank',
+      recordTransaction: boolean
+    ) => {
+      const realTime = getExactRealTime();
+
+      // 1. Mark tab as settled
+      setTabs((prev) => {
+        const updated = prev.map((t) =>
+          t.id === tab.id
+            ? { ...t, status: 'settled' as const, settledAt: Date.now() }
+            : t
+        );
+        setLocalTabs(updated);
+        fetch('/api/tabs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'settle', id: tab.id }),
+        }).catch(() => {});
+        return updated;
+      });
+
+      // 2. Adjust wallet & optionally record transaction
+      if (recordTransaction) {
+        if (tab.type === 'owed_to_you') {
+          // Friend paying you back -> Inflow! (Adds to Cash in Hand or Account)
+          handleSaveTransaction({
+            type: 'income',
+            amount: tab.amount,
+            category: 'Other Inflows',
+            description: `Tab Settled: ${tab.personName} paid back`,
+            paymentMethod,
+            date: realTime.date,
+            time: realTime.time,
+            timestamp: realTime.timestamp,
+            notes: `Settled via ${paymentMethod} (${tab.description})`,
+          });
+        } else {
+          // You paying back friend -> Outflow! (Deducts from Cash in Hand or Account)
+          handleSaveTransaction({
+            type: 'expense',
+            amount: tab.amount,
+            category: 'Miscellaneous',
+            description: `Tab Settled: Paid back ${tab.personName}`,
+            paymentMethod,
+            date: realTime.date,
+            time: realTime.time,
+            timestamp: realTime.timestamp,
+            notes: `Settled via ${paymentMethod} (${tab.description})`,
+          });
+        }
+      } else {
+        // Adjust wallet balance directly without logging a transaction entry
+        setWallets((w) => {
+          const isIncome = tab.type === 'owed_to_you';
+          return applyWalletImpact(
+            w,
+            tab.amount,
+            isIncome ? 'income' : 'expense',
+            paymentMethod,
+            'apply'
+          );
+        });
+      }
+    },
+    [handleSaveTransaction, applyWalletImpact]
+  );
 
   const handleDeleteTab = useCallback((id: string) => {
     setTabs((prev) => {
