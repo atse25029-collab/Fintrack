@@ -19,7 +19,11 @@ import {
   Gift,
   Heart,
   Tag,
+  Wallet,
+  TrendingUp,
   RotateCcw,
+  ArrowUpRight,
+  ArrowDownLeft,
 } from 'lucide-react';
 
 interface QuickPresetModalProps {
@@ -31,6 +35,8 @@ interface QuickPresetModalProps {
 }
 
 const AVAILABLE_ICONS = [
+  { name: 'wallet' as const, icon: Wallet, label: 'Wage / Cash' },
+  { name: 'trending-up' as const, icon: TrendingUp, label: 'Income / Growth' },
   { name: 'coffee' as const, icon: Coffee, label: 'Chai / Coffee' },
   { name: 'utensils' as const, icon: Utensils, label: 'Food / Meal' },
   { name: 'shopping-cart' as const, icon: ShoppingCart, label: 'Groceries' },
@@ -58,6 +64,7 @@ export default function QuickPresetModal({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [label, setLabel] = useState('');
   const [amount, setAmount] = useState('');
+  const [type, setType] = useState<'expense' | 'income'>('expense');
   const [category, setCategory] = useState(DEFAULT_CATEGORIES.expense[0]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('UPI / Bank');
   const [iconName, setIconName] = useState<QuickPreset['iconName']>('coffee');
@@ -66,12 +73,14 @@ export default function QuickPresetModal({
   if (!isOpen) return null;
 
   const handleStartEdit = (preset: QuickPreset) => {
+    const isInc = preset.type === 'income';
     setEditingId(preset.id);
     setLabel(preset.label);
     setAmount(preset.amount.toString());
+    setType(preset.type || 'expense');
     setCategory(preset.category);
     setPaymentMethod(preset.paymentMethod);
-    setIconName(preset.iconName || 'tag');
+    setIconName(preset.iconName || (isInc ? 'wallet' : 'tag'));
     setError(null);
   };
 
@@ -79,7 +88,24 @@ export default function QuickPresetModal({
     setEditingId(null);
     setLabel('');
     setAmount('');
+    setType('expense');
+    setCategory(DEFAULT_CATEGORIES.expense[0]);
     setError(null);
+  };
+
+  const handleTypeChange = (newType: 'expense' | 'income') => {
+    setType(newType);
+    if (newType === 'income') {
+      setCategory(DEFAULT_CATEGORIES.income[0]);
+      if (iconName === 'coffee' || iconName === 'utensils') {
+        setIconName('wallet');
+      }
+    } else {
+      setCategory(DEFAULT_CATEGORIES.expense[0]);
+      if (iconName === 'wallet' || iconName === 'trending-up') {
+        setIconName('coffee');
+      }
+    }
   };
 
   const handleSavePresetForm = (e: React.FormEvent) => {
@@ -95,13 +121,13 @@ export default function QuickPresetModal({
     }
 
     if (editingId) {
-      // Update existing
       const updated = presets.map((p) =>
         p.id === editingId
           ? {
               ...p,
               label: label.trim(),
               amount: parsedAmount,
+              type,
               category,
               paymentMethod,
               iconName,
@@ -110,11 +136,11 @@ export default function QuickPresetModal({
       );
       onSavePresets(updated);
     } else {
-      // Add new
       const newPreset: QuickPreset = {
         id: `preset-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
         label: label.trim(),
         amount: parsedAmount,
+        type,
         category,
         paymentMethod,
         iconName,
@@ -144,7 +170,7 @@ export default function QuickPresetModal({
               Customise Quick 1-Tap Logs
             </h3>
             <p className="text-[11px] sm:text-xs text-zinc-500">
-              Add, edit, or remove your frequent 1-tap expense buttons
+              Add income (daily wages, cashback) and expense (tea, thali) 1-tap shortcuts
             </p>
           </div>
           <button
@@ -164,7 +190,7 @@ export default function QuickPresetModal({
         {/* Existing Presets List */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs font-semibold text-zinc-700">
-            <span>Your Quick Presets ({presets.length})</span>
+            <span>Active Quick Presets ({presets.length})</span>
             <button
               type="button"
               onClick={onResetDefaults}
@@ -178,6 +204,7 @@ export default function QuickPresetModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {presets.map((preset) => {
               const Icon = getPresetIcon(preset.iconName);
+              const isIncome = preset.type === 'income';
               const isEditing = editingId === preset.id;
 
               return (
@@ -190,15 +217,35 @@ export default function QuickPresetModal({
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <div className="p-1.5 rounded-lg bg-white border border-zinc-200 shrink-0">
-                      <Icon className="w-3.5 h-3.5 text-black" />
+                    <div
+                      className={`p-1.5 rounded-lg border shrink-0 ${
+                        isIncome
+                          ? 'bg-black text-white border-black'
+                          : 'bg-white text-zinc-900 border-zinc-200'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-semibold text-black truncate">
-                        {preset.label}
+                      <div className="flex items-center gap-1 min-w-0">
+                        <span className="text-xs font-semibold text-black truncate">
+                          {preset.label}
+                        </span>
+                        <span
+                          className={`text-[8px] font-mono px-1 py-0.2 rounded border font-semibold shrink-0 ${
+                            isIncome
+                              ? 'bg-zinc-900 text-white border-zinc-900'
+                              : 'bg-zinc-200 text-zinc-700 border-zinc-300'
+                          }`}
+                        >
+                          {isIncome ? '+INCOME' : '-EXPENSE'}
+                        </span>
                       </div>
                       <div className="flex items-center gap-1 text-[10px] text-zinc-500">
-                        <span>{formatCurrency(preset.amount)}</span>
+                        <span className="font-mono font-bold text-black">
+                          {isIncome ? '+' : '-'}
+                          {formatCurrency(preset.amount)}
+                        </span>
                         <span>&bull;</span>
                         <span className="truncate">{preset.paymentMethod.split(' ')[0]}</span>
                       </div>
@@ -247,15 +294,46 @@ export default function QuickPresetModal({
             )}
           </div>
 
+          {/* Type Switcher: Expense vs Income */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold text-zinc-700">Preset Type</label>
+            <div className="grid grid-cols-2 p-1 bg-white rounded-xl border border-zinc-200 text-xs font-semibold gap-1">
+              <button
+                type="button"
+                onClick={() => handleTypeChange('expense')}
+                className={`py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                  type === 'expense'
+                    ? 'bg-black text-white shadow-xs'
+                    : 'text-zinc-600 hover:text-black'
+                }`}
+              >
+                <ArrowDownLeft className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Expense (Spend)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTypeChange('income')}
+                className={`py-1.5 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                  type === 'income'
+                    ? 'bg-black text-white shadow-xs'
+                    : 'text-zinc-600 hover:text-black'
+                }`}
+              >
+                <ArrowUpRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>Income (Wage/Inflow)</span>
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {/* Label */}
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-zinc-700">Preset Name</label>
+              <label className="text-[11px] font-semibold text-zinc-700">Preset Label</label>
               <input
                 type="text"
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
-                placeholder="e.g. Masala Chai"
+                placeholder={type === 'income' ? 'e.g. Daily Wage' : 'e.g. Masala Chai'}
                 className="w-full px-3 py-1.5 bg-white border border-zinc-200 rounded-xl text-xs text-black focus:outline-none focus:ring-2 focus:ring-black"
                 required
               />
@@ -263,14 +341,16 @@ export default function QuickPresetModal({
 
             {/* Amount */}
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-zinc-700">Amount (₹)</label>
+              <label className="text-[11px] font-semibold text-zinc-700">
+                Amount ({type === 'income' ? '+₹' : '-₹'})
+              </label>
               <input
                 type="number"
                 step="any"
                 min="1"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                placeholder="e.g. 30"
+                placeholder={type === 'income' ? '200' : '50'}
                 className="w-full px-3 py-1.5 bg-white border border-zinc-200 rounded-xl text-xs font-mono font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
                 required
               />
@@ -286,25 +366,37 @@ export default function QuickPresetModal({
                 onChange={(e) => setCategory(e.target.value)}
                 className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-xl text-xs text-black focus:outline-none focus:ring-2 focus:ring-black"
               >
-                {DEFAULT_CATEGORIES.expense.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
+                {type === 'income'
+                  ? DEFAULT_CATEGORIES.income.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))
+                  : DEFAULT_CATEGORIES.expense.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
               </select>
             </div>
 
             {/* Payment Method */}
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-zinc-700">Payment Wallet</label>
+              <label className="text-[11px] font-semibold text-zinc-700">Wallet Impact</label>
               <select
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
                 className="w-full px-2.5 py-1.5 bg-white border border-zinc-200 rounded-xl text-xs text-black focus:outline-none focus:ring-2 focus:ring-black"
               >
-                <option value="UPI / Bank">UPI / Bank (Money in Account)</option>
-                <option value="Cash">Cash (Money in Hand)</option>
-                <option value="Card">Card (Money in Account)</option>
+                <option value="Cash">
+                  Cash ({type === 'income' ? 'Adds to Hand' : 'Deducts from Hand'})
+                </option>
+                <option value="UPI / Bank">
+                  UPI / Bank ({type === 'income' ? 'Adds to Account' : 'Deducts from Account'})
+                </option>
+                <option value="Card">
+                  Card ({type === 'income' ? 'Adds to Account' : 'Deducts from Account'})
+                </option>
               </select>
             </div>
           </div>

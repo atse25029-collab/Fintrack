@@ -43,10 +43,11 @@ export default function QuickAddBar({
         </button>
       </div>
 
-      {/* Dynamic 1-Tap Presets Grid */}
+      {/* Dynamic 1-Tap Presets Grid (Supports both Incomes and Expenses!) */}
       <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
         {presets.map((item) => {
           const Icon = getPresetIcon(item.iconName);
+          const isIncome = item.type === 'income';
           const isCash = item.paymentMethod === 'Cash';
 
           return (
@@ -57,26 +58,50 @@ export default function QuickAddBar({
                   description: item.label,
                   amount: item.amount,
                   category: item.category,
-                  type: 'expense',
+                  type: isIncome ? 'income' : 'expense',
                   paymentMethod: item.paymentMethod,
                 })
               }
-              className="flex items-center justify-between p-2.5 sm:p-3 rounded-xl bg-zinc-50 hover:bg-zinc-100 active:scale-[0.97] transition-all border border-zinc-200 text-left group min-w-0"
+              className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl active:scale-[0.97] transition-all border text-left group min-w-0 ${
+                isIncome
+                  ? 'bg-zinc-100/70 hover:bg-zinc-100 border-zinc-300'
+                  : 'bg-zinc-50 hover:bg-zinc-100 border-zinc-200'
+              }`}
             >
               <div className="flex items-center gap-2 min-w-0 flex-1">
-                <div className="p-1.5 rounded-lg bg-white border border-zinc-200 group-hover:border-black transition-colors shrink-0">
-                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-black" />
+                <div
+                  className={`p-1.5 rounded-lg border shrink-0 transition-colors ${
+                    isIncome
+                      ? 'bg-black text-white border-black'
+                      : 'bg-white text-zinc-900 border-zinc-200 group-hover:border-black'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-zinc-900 truncate">
-                    {item.label}
+                  <div className="flex items-center gap-1 min-w-0">
+                    <span className="text-xs font-semibold text-zinc-950 truncate">
+                      {item.label}
+                    </span>
                   </div>
-                  <div className="text-[9px] font-mono text-zinc-400 truncate">
-                    {isCash ? 'Cash (Hand)' : 'UPI (Account)'}
+                  <div className="flex items-center gap-1 text-[9px] font-mono text-zinc-500 truncate">
+                    {isIncome ? (
+                      <span className="text-black font-semibold">+Inflow</span>
+                    ) : (
+                      <span>-Spend</span>
+                    )}
+                    <span>&bull;</span>
+                    <span className="truncate">{isCash ? 'Hand' : 'Account'}</span>
                   </div>
                 </div>
               </div>
-              <span className="text-xs font-mono font-bold text-black shrink-0 ml-1.5">
+
+              <span
+                className={`text-xs font-mono font-bold shrink-0 ml-1.5 ${
+                  isIncome ? 'text-black font-black' : 'text-zinc-950'
+                }`}
+              >
+                {isIncome ? '+' : '-'}
                 {formatCurrency(item.amount)}
               </span>
             </button>

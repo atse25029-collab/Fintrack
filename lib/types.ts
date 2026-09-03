@@ -166,7 +166,21 @@ export interface QuickPreset {
   label: string;
   amount: number;
   category: string;
+  type?: 'expense' | 'income'; // default: 'expense'
   paymentMethod: PaymentMethod;
-  iconName?: 'coffee' | 'utensils' | 'shopping-cart' | 'bus' | 'fuel' | 'zap' | 'smartphone' | 'gift' | 'heart' | 'tag';
+  iconName?:
+    | 'coffee'
+    | 'utensils'
+    | 'shopping-cart'
+    | 'bus'
+    | 'fuel'
+    | 'zap'
+    | 'smartphone'
+    | 'gift'
+    | 'heart'
+    | 'tag'
+    | 'wallet'
+    | 'trending-up';
 }
+
 
