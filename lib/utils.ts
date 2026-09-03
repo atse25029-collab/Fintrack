@@ -143,17 +143,72 @@ export function calculateDailySummary(transactions: Transaction[], budget: Budge
     .filter((t) => t.type === 'income')
     .reduce((sum, t) => sum + t.amount, 0);
 
-  const remaining = Math.max(0, budget.dailyAllowance - spentToday);
-  const percentUsed = budget.dailyAllowance > 0 ? Math.min(100, Math.round((spentToday / budget.dailyAllowance) * 100)) : 0;
+  const baseAllowance = budget.dailyAllowance;
+
+  // Calculate accumulated unspent daily budget carried forward from previous days
+  // (Applies strictly to daily budget, accumulating day-by-day unspent allowance)
+  let carriedForward = 0;
+
+  if (transactions.length > 0 && baseAllowance > 0) {
+    const pastExpenseTxs = transactions.filter((t) => t.date < today);
+
+    if (pastExpenseTxs.length > 0) {
+      const sortedDates = pastExpenseTxs.map((t) => t.date).sort();
+      const earliestDateStr = sortedDates[0];
+
+      // Pre-compute daily expenses
+      const dailyExpenses: Record<string, number> = {};
+      pastExpenseTxs.forEach((tx) => {
+        if (tx.type === 'expense') {
+          dailyExpenses[tx.date] = (dailyExpenses[tx.date] || 0) + tx.amount;
+        }
+      });
+
+      // Bounded lookback from earliest transaction up to yesterday (max 30 days)
+      const cursor = new Date(earliestDateStr + 'T00:00:00');
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      thirtyDaysAgo.setHours(0, 0, 0, 0);
+      if (cursor < thirtyDaysAgo) {
+        cursor.setTime(thirtyDaysAgo.getTime());
+      }
+
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setHours(0, 0, 0, 0);
+
+      let accumulated = 0;
+      while (cursor <= yesterday) {
+        const dStr = cursor.toISOString().split('T')[0];
+        const spentOnDay = dailyExpenses[dStr] || 0;
+        const netDaily = baseAllowance - spentOnDay;
+        // Unspent adds to accumulated savings; overspending draws from accumulated savings
+        accumulated = Math.max(0, accumulated + netDaily);
+
+        cursor.setDate(cursor.getDate() + 1);
+      }
+
+      carriedForward = accumulated;
+    }
+  }
+
+  const effectiveDailyAllowance = baseAllowance + carriedForward;
+  const remaining = Math.max(0, effectiveDailyAllowance - spentToday);
+  const percentUsed =
+    effectiveDailyAllowance > 0
+      ? Math.min(100, Math.round((spentToday / effectiveDailyAllowance) * 100))
+      : 0;
 
   return {
     date: today,
     spentToday,
     earnedToday,
     remainingAllowance: remaining,
-    dailyAllowance: budget.dailyAllowance,
+    dailyAllowance: effectiveDailyAllowance,
+    baseAllowance,
+    carriedForward,
     percentUsed,
-    isOverBudget: spentToday > budget.dailyAllowance,
+    isOverBudget: spentToday > effectiveDailyAllowance,
   };
 }
 

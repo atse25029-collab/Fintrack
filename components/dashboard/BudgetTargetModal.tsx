@@ -94,9 +94,13 @@ export default function BudgetTargetModal({
                 placeholder="e.g. 600"
               />
             </div>
-            <p className="text-[11px] text-zinc-500">
-              Your personal daily spending allowance (persists across reloads).
-            </p>
+            <div className="p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-[11px] text-zinc-600 space-y-0.5">
+              <span className="font-semibold text-black block">✨ Automatic Daily Rollover:</span>
+              <p>
+                Unspent daily allowance automatically carries forward to the next day and accumulates.
+                (Applies only to daily spending, keeping your monthly budget cap intact).
+              </p>
+            </div>
           </div>
 
           {/* Monthly Budget Limit (₹) */}

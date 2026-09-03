@@ -29,7 +29,9 @@ export interface DailySummary {
   spentToday: number;
   earnedToday: number;
   remainingAllowance: number;
-  dailyAllowance: number;
+  dailyAllowance: number; // Effective total allowance for today (base + carriedForward)
+  baseAllowance: number;  // Configured base daily allowance
+  carriedForward: number; // Accumulated unspent budget carried forward from previous days
   percentUsed: number;
   isOverBudget: boolean;
 }
