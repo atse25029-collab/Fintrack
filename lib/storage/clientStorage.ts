@@ -22,7 +22,7 @@ export function getLocalTransactions(): Transaction[] {
     const raw = localStorage.getItem(LOCAL_TX_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
     console.error('Error reading localStorage transactions:', e);
@@ -85,7 +85,7 @@ export function getLocalTabs(): TabItem[] {
     const raw = localStorage.getItem(LOCAL_TABS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
     console.error('Error reading tabs:', e);
@@ -111,7 +111,7 @@ export function getLocalDues(): MonthlyDue[] {
     const raw = localStorage.getItem(LOCAL_DUES_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
     console.error('Error reading dues:', e);
