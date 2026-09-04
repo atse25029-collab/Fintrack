@@ -13,6 +13,7 @@ export interface Transaction {
   timestamp?: string; // ISO string with exact real-time seconds
   paymentMethod: PaymentMethod;
   notes?: string;
+  isMonthlyDue?: boolean; // When true, excluded from daily spending allowance calculation
   createdAt: number;
   synced?: boolean;
 }
@@ -29,9 +30,17 @@ export interface DailySummary {
   spentToday: number;
   earnedToday: number;
   remainingAllowance: number;
-  dailyAllowance: number; // Effective total allowance for today (base + carriedForward)
-  baseAllowance: number;  // Configured base daily allowance
-  carriedForward: number; // Accumulated unspent budget carried forward from previous days
+  dailyAllowance: number; // Effective allowance today (base + carriedForward, min 0)
+  baseAllowance: number;  // Configured base daily allowance (e.g. 600)
+  carriedForward: number; // Net accumulated rollover (positive = savings surplus, negative = overspent deficit)
+  isDeficit: boolean;     // True when user has accumulated an overspend from past days
+  deficitAmount: number;  // Absolute overspent amount being compensated
+  weeklySpent: number;    // This week's total daily spending (excluding monthly dues)
+  weeklyTarget: number;   // This week's expected budget
+  weeklyVariance: number; // Positive = under budget, Negative = overspent
+  monthlyDailySpent: number; // Total daily spending this month so far
+  monthlyDailyTarget: number; // Cumulative daily budget target so far this month
+  monthlyDailyVariance: number; // Positive = net saved, Negative = net overspent
   percentUsed: number;
   isOverBudget: boolean;
 }

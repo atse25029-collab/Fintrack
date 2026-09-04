@@ -543,6 +543,7 @@ export default function HomePage() {
         category: due.category,
         description: `Monthly Due: ${due.title}`,
         paymentMethod: due.paymentMethod,
+        isMonthlyDue: true,
         date: realTime.date,
         time: realTime.time,
         timestamp: realTime.timestamp,

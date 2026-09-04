@@ -3,7 +3,7 @@
 import React from 'react';
 import { DailySummary, BudgetConfig } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
-import { Target, Sparkles, TrendingUp } from 'lucide-react';
+import { Target, Sparkles, AlertTriangle, ShieldCheck, ArrowDownRight, ArrowUpRight } from 'lucide-react';
 
 interface DailyOverviewProps {
   summary: DailySummary;
@@ -25,7 +25,7 @@ export default function DailyOverview({
         <div className="flex items-center gap-1.5 min-w-0">
           <div className="w-2 h-2 rounded-full bg-black shrink-0" />
           <span className="text-[11px] sm:text-xs font-mono font-semibold uppercase tracking-wider text-zinc-500 truncate">
-            Daily Budget &amp; Allowance
+            Daily Spending Budget &amp; Allowance
           </span>
         </div>
         <button
@@ -33,12 +33,36 @@ export default function DailyOverview({
           className="flex items-center gap-1 text-[11px] sm:text-xs font-medium text-zinc-600 hover:text-black transition-colors shrink-0"
         >
           <Target className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-          <span>Edit ({formatCurrency(summary.baseAllowance || budget.dailyAllowance)}/day)</span>
+          <span>Edit Base ({formatCurrency(summary.baseAllowance || budget.dailyAllowance)}/day)</span>
         </button>
       </div>
 
-      {/* Carried Forward Rollover Banner (When unspent budget has accumulated) */}
-      {summary.carriedForward > 0 && (
+      {/* Case A: Active Overspend Deficit Alert (Compensating previous overspending) */}
+      {summary.isDeficit && summary.deficitAmount > 0 && (
+        <div className="p-3 bg-zinc-900 text-white rounded-xl border border-zinc-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
+          <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+            <div className="p-1 bg-zinc-800 rounded-lg text-zinc-300 shrink-0 mt-0.5 sm:mt-0">
+              <AlertTriangle className="w-4 h-4 text-zinc-200" />
+            </div>
+            <div className="text-[11px] sm:text-xs min-w-0">
+              <span className="font-bold text-white">Overspend Deficit Active: </span>
+              <span className="text-zinc-300">
+                You overspent by{' '}
+                <strong className="text-white font-mono font-bold">
+                  {formatCurrency(summary.deficitAmount)}
+                </strong>{' '}
+                on previous days. Today&apos;s allowance is reduced to compensate!
+              </span>
+            </div>
+          </div>
+          <span className="text-xs font-mono font-bold text-zinc-300 self-end sm:self-auto shrink-0 bg-zinc-800 px-2 py-0.5 rounded border border-zinc-700">
+            Compensating
+          </span>
+        </div>
+      )}
+
+      {/* Case B: Rollover Savings Surplus (When unspent budget has accumulated) */}
+      {!summary.isDeficit && summary.carriedForward > 0 && (
         <div className="flex items-center justify-between p-2.5 sm:p-3 bg-zinc-50 border border-zinc-200 rounded-xl">
           <div className="flex items-center gap-2 min-w-0">
             <div className="p-1 bg-black text-white rounded-lg shrink-0">
@@ -57,7 +81,7 @@ export default function DailyOverview({
 
       {/* Main daily numbers: Compact responsive grid */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        {/* Spent Today */}
+        {/* Spent Today (Excluding Monthly Dues) */}
         <div className="space-y-0.5 min-w-0">
           <span className="text-[10px] sm:text-xs text-zinc-500 font-medium block truncate">
             Spent Today
@@ -90,7 +114,9 @@ export default function DailyOverview({
             </span>
           ) : (
             <span className="text-[10px] sm:text-xs text-zinc-500 block truncate">
-              {summary.carriedForward > 0
+              {summary.isDeficit
+                ? 'after compensation'
+                : summary.carriedForward > 0
                 ? `incl. +${formatCurrency(summary.carriedForward)} rollover`
                 : 'available to spend'}
             </span>
@@ -114,8 +140,8 @@ export default function DailyOverview({
         <div className="flex justify-between text-[10px] sm:text-xs text-zinc-600 font-mono">
           <span>
             {summary.percentUsed}% used
-            {summary.carriedForward > 0
-              ? ` of ${formatCurrency(summary.dailyAllowance)} total allowance`
+            {summary.dailyAllowance !== summary.baseAllowance
+              ? ` of ${formatCurrency(summary.dailyAllowance)} compensated allowance`
               : ''}
           </span>
           <span className="font-semibold text-zinc-900">
@@ -131,6 +157,59 @@ export default function DailyOverview({
           />
         </div>
       </div>
+
+      {/* Weekly & Monthly Budget Health Summary */}
+      <div className="pt-2 border-t border-zinc-100 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+        {/* This Week */}
+        <div className="p-2.5 bg-zinc-50 rounded-xl border border-zinc-200 flex items-center justify-between">
+          <div className="min-w-0">
+            <span className="text-[10px] text-zinc-500 uppercase font-mono block">This Week</span>
+            <div className="font-mono text-xs font-semibold text-zinc-900">
+              {formatCurrency(summary.weeklySpent)} / {formatCurrency(summary.weeklyTarget)}
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            {summary.weeklyVariance >= 0 ? (
+              <span className="inline-flex items-center gap-0.5 text-[11px] font-mono font-bold text-black">
+                <ArrowDownRight className="w-3 h-3 text-black" />
+                +{formatCurrency(summary.weeklyVariance)} saved
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-0.5 text-[11px] font-mono font-bold text-black bg-zinc-200 px-1.5 py-0.5 rounded">
+                <ArrowUpRight className="w-3 h-3 text-black" />
+                -{formatCurrency(Math.abs(summary.weeklyVariance))} over
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* This Month (Daily Budget Track) */}
+        <div className="p-2.5 bg-zinc-50 rounded-xl border border-zinc-200 flex items-center justify-between">
+          <div className="min-w-0">
+            <span className="text-[10px] text-zinc-500 uppercase font-mono block">Month-to-Date</span>
+            <div className="font-mono text-xs font-semibold text-zinc-900">
+              {formatCurrency(summary.monthlyDailySpent)} / {formatCurrency(summary.monthlyDailyTarget)}
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            {summary.monthlyDailyVariance >= 0 ? (
+              <span className="inline-flex items-center gap-0.5 text-[11px] font-mono font-bold text-black">
+                <ArrowDownRight className="w-3 h-3 text-black" />
+                +{formatCurrency(summary.monthlyDailyVariance)} saved
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-0.5 text-[11px] font-mono font-bold text-black bg-zinc-200 px-1.5 py-0.5 rounded">
+                <ArrowUpRight className="w-3 h-3 text-black" />
+                -{formatCurrency(Math.abs(summary.monthlyDailyVariance))} over
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <p className="text-[10px] text-zinc-400 text-center">
+        Fixed monthly dues (rent, bills) are part of your monthly ceiling and do not reduce your daily budget.
+      </p>
     </div>
   );
 }
