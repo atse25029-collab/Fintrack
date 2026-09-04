@@ -6,6 +6,10 @@ import {
   MonthlyDue,
   QuickPreset,
   BudgetConfig,
+  FinancialStats,
+  DailySummary,
+  CashflowPoint,
+  CategoryBreakdownItem,
 } from '@/lib/types';
 import { User } from '@supabase/supabase-js';
 
@@ -58,7 +62,241 @@ export function subscribeToAuthChanges(callback: (user: User | null) => void) {
 }
 
 // ==========================================
-// Cloud Database CRUD & Sync
+// Real-Time Granular Cloud Sync Operations
+// ==========================================
+
+export async function syncTransactionToCloud(tx: Transaction) {
+  const client = getSupabaseClient();
+  if (!client) return;
+  try {
+    const user = await getCurrentUser();
+    const userId = user?.id || 'default';
+
+    await client.from('transactions').upsert(
+      {
+        id: tx.id,
+        user_id: userId,
+        type: tx.type,
+        amount: tx.amount,
+        category: tx.category,
+        description: tx.description,
+        date: tx.date,
+        time: tx.time || '00:00:00',
+        timestamp: tx.timestamp || new Date().toISOString(),
+        payment_method: tx.paymentMethod,
+        is_monthly_due: Boolean(tx.isMonthlyDue),
+        notes: tx.notes || null,
+        created_at: tx.createdAt || Date.now(),
+        synced: true,
+      },
+      { onConflict: 'id' }
+    );
+  } catch (err) {
+    console.warn('Background transaction cloud sync warning:', err);
+  }
+}
+
+export async function deleteTransactionFromCloud(id: string) {
+  const client = getSupabaseClient();
+  if (!client) return;
+  try {
+    await client.from('transactions').delete().eq('id', id);
+  } catch (err) {
+    console.warn('Background transaction delete warning:', err);
+  }
+}
+
+export async function syncDueToCloud(due: MonthlyDue) {
+  const client = getSupabaseClient();
+  if (!client) return;
+  try {
+    const user = await getCurrentUser();
+    const userId = user?.id || 'default';
+
+    await client.from('monthly_dues').upsert(
+      {
+        id: due.id,
+        user_id: userId,
+        title: due.title,
+        amount: due.amount,
+        category: due.category,
+        payment_method: due.paymentMethod,
+        due_day_of_month: due.dueDayOfMonth,
+        notes: due.notes || null,
+        status: due.status,
+        last_paid_date: due.lastPaidDate || null,
+        created_at: due.createdAt || Date.now(),
+      },
+      { onConflict: 'id' }
+    );
+  } catch (err) {
+    console.warn('Background monthly due cloud sync warning:', err);
+  }
+}
+
+export async function deleteDueFromCloud(id: string) {
+  const client = getSupabaseClient();
+  if (!client) return;
+  try {
+    await client.from('monthly_dues').delete().eq('id', id);
+  } catch (err) {
+    console.warn('Background monthly due delete warning:', err);
+  }
+}
+
+export async function syncTabToCloud(tab: TabItem) {
+  const client = getSupabaseClient();
+  if (!client) return;
+  try {
+    const user = await getCurrentUser();
+    const userId = user?.id || 'default';
+
+    await client.from('tabs').upsert(
+      {
+        id: tab.id,
+        user_id: userId,
+        person_name: tab.personName,
+        amount: tab.amount,
+        type: tab.type,
+        description: tab.description,
+        date: tab.date,
+        status: tab.status,
+        settled_at: tab.settledAt || null,
+        notes: tab.notes || null,
+        created_at: tab.createdAt || Date.now(),
+      },
+      { onConflict: 'id' }
+    );
+  } catch (err) {
+    console.warn('Background tab cloud sync warning:', err);
+  }
+}
+
+export async function deleteTabFromCloud(id: string) {
+  const client = getSupabaseClient();
+  if (!client) return;
+  try {
+    await client.from('tabs').delete().eq('id', id);
+  } catch (err) {
+    console.warn('Background tab delete warning:', err);
+  }
+}
+
+export async function syncWalletsToCloud(wallets: WalletBalances) {
+  const client = getSupabaseClient();
+  if (!client) return;
+  try {
+    const user = await getCurrentUser();
+    const userId = user?.id || 'default';
+
+    await client.from('wallets').upsert(
+      {
+        user_id: userId,
+        cash_in_hand: wallets.cashInHand,
+        account_balance: wallets.accountBalance,
+        last_updated: wallets.lastUpdated || Date.now(),
+      },
+      { onConflict: 'user_id' }
+    );
+  } catch (err) {
+    console.warn('Background wallets cloud sync warning:', err);
+  }
+}
+
+export async function syncBudgetToCloud(budget: BudgetConfig) {
+  const client = getSupabaseClient();
+  if (!client) return;
+  try {
+    const user = await getCurrentUser();
+    const userId = user?.id || 'default';
+
+    await client.from('budget_config').upsert(
+      {
+        user_id: userId,
+        monthly_limit: budget.monthlyLimit,
+        daily_allowance: budget.dailyAllowance,
+        currency: budget.currency,
+        currency_symbol: budget.currencySymbol,
+      },
+      { onConflict: 'user_id' }
+    );
+  } catch (err) {
+    console.warn('Background budget cloud sync warning:', err);
+  }
+}
+
+export async function syncPresetsToCloud(presets: QuickPreset[]) {
+  const client = getSupabaseClient();
+  if (!client || presets.length === 0) return;
+  try {
+    const user = await getCurrentUser();
+    const userId = user?.id || 'default';
+
+    const rows = presets.map((p) => ({
+      id: p.id,
+      user_id: userId,
+      label: p.label,
+      amount: p.amount,
+      category: p.category,
+      type: p.type || 'expense',
+      payment_method: p.paymentMethod,
+      icon_name: p.iconName || 'tag',
+      created_at: Date.now(),
+    }));
+
+    await client.from('quick_presets').upsert(rows, { onConflict: 'id' });
+  } catch (err) {
+    console.warn('Background presets cloud sync warning:', err);
+  }
+}
+
+// Dedicated Analytics Cloud Snapshot Sync
+export async function syncAnalyticsSnapshotToCloud(
+  stats: FinancialStats,
+  dailySummary: DailySummary,
+  cashflow: CashflowPoint[],
+  categoryExpenses: CategoryBreakdownItem[],
+  categoryIncomes: CategoryBreakdownItem[]
+) {
+  const client = getSupabaseClient();
+  if (!client) return;
+  try {
+    const user = await getCurrentUser();
+    const userId = user?.id || 'default';
+    const today = new Date().toISOString().split('T')[0];
+    const snapshotId = `snapshot-${userId}-${today}`;
+
+    await client.from('analytics_snapshots').upsert(
+      {
+        id: snapshotId,
+        user_id: userId,
+        snapshot_date: today,
+        total_income: stats.totalIncome,
+        total_expense: stats.totalExpense,
+        month_income: stats.monthIncome,
+        month_expense: stats.monthExpense,
+        savings_rate: stats.savingsRate,
+        daily_spent: dailySummary.spentToday,
+        daily_remaining: dailySummary.remainingAllowance,
+        weekly_spent: dailySummary.weeklySpent,
+        weekly_variance: dailySummary.weeklyVariance,
+        monthly_daily_spent: dailySummary.monthlyDailySpent,
+        monthly_daily_variance: dailySummary.monthlyDailyVariance,
+        overspend_deficit: dailySummary.deficitAmount,
+        category_expenses: categoryExpenses,
+        category_incomes: categoryIncomes,
+        cashflow_trends: cashflow,
+        updated_at: Date.now(),
+      },
+      { onConflict: 'id' }
+    );
+  } catch (err) {
+    console.warn('Background analytics cloud snapshot warning:', err);
+  }
+}
+
+// ==========================================
+// Full Two-Way Fetch & Bulk Upload
 // ==========================================
 
 export async function fetchAllCloudData(): Promise<{
@@ -95,6 +333,7 @@ export async function fetchAllCloudData(): Promise<{
         time: row.time,
         timestamp: row.timestamp,
         paymentMethod: row.payment_method,
+        isMonthlyDue: Boolean(row.is_monthly_due),
         notes: row.notes || '',
         createdAt: Number(row.created_at),
         synced: true,
@@ -167,7 +406,6 @@ export async function fetchAllCloudData(): Promise<{
   }
 }
 
-// Bulk Upload Local Ledger to Supabase Cloud
 export async function uploadLocalDataToCloud(data: {
   transactions: Transaction[];
   wallets: WalletBalances;
@@ -181,7 +419,7 @@ export async function uploadLocalDataToCloud(data: {
 
   try {
     const user = await getCurrentUser();
-    const userId = user?.id;
+    const userId = user?.id || 'default';
 
     // 1. Transactions upsert
     if (data.transactions.length > 0) {
@@ -196,6 +434,7 @@ export async function uploadLocalDataToCloud(data: {
         time: tx.time,
         timestamp: tx.timestamp,
         payment_method: tx.paymentMethod,
+        is_monthly_due: Boolean(tx.isMonthlyDue),
         notes: tx.notes || null,
         created_at: tx.createdAt,
         synced: true,
@@ -204,14 +443,15 @@ export async function uploadLocalDataToCloud(data: {
     }
 
     // 2. Wallets upsert
-    if (userId) {
-      await client.from('wallets').upsert({
+    await client.from('wallets').upsert(
+      {
         user_id: userId,
         cash_in_hand: data.wallets.cashInHand,
         account_balance: data.wallets.accountBalance,
         last_updated: data.wallets.lastUpdated || Date.now(),
-      });
-    }
+      },
+      { onConflict: 'user_id' }
+    );
 
     // 3. Tabs upsert
     if (data.tabs.length > 0) {
@@ -265,15 +505,16 @@ export async function uploadLocalDataToCloud(data: {
     }
 
     // 6. Budget config upsert
-    if (userId) {
-      await client.from('budget_config').upsert({
+    await client.from('budget_config').upsert(
+      {
         user_id: userId,
         monthly_limit: data.budget.monthlyLimit,
         daily_allowance: data.budget.dailyAllowance,
         currency: data.budget.currency,
         currency_symbol: data.budget.currencySymbol,
-      });
-    }
+      },
+      { onConflict: 'user_id' }
+    );
 
     return true;
   } catch (err) {

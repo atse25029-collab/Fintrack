@@ -25,7 +25,19 @@ import MonthlyDueModal from '@/components/dues/MonthlyDueModal';
 import AnalyticsView from '@/components/analytics/AnalyticsView';
 import ProfileSection from '@/components/profile/ProfileSection';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
-import { fetchAllCloudData } from '@/lib/supabase/dbService';
+import {
+  fetchAllCloudData,
+  syncTransactionToCloud,
+  deleteTransactionFromCloud,
+  syncDueToCloud,
+  deleteDueFromCloud,
+  syncTabToCloud,
+  deleteTabFromCloud,
+  syncWalletsToCloud,
+  syncBudgetToCloud,
+  syncPresetsToCloud,
+  syncAnalyticsSnapshotToCloud,
+} from '@/lib/supabase/dbService';
 
 import {
   Transaction,
@@ -250,12 +262,14 @@ export default function HomePage() {
           updated = [newTx, ...prev];
         }
 
+        const savedTx = data.id ? updated.find((t) => t.id === data.id)! : updated[0];
         setLocalTransactions(updated);
+        syncTransactionToCloud(savedTx);
 
         fetch('/api/transactions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data.id ? { ...data } : updated[0]),
+          body: JSON.stringify(savedTx),
         }).catch(() => {});
 
         return updated;
@@ -293,19 +307,22 @@ export default function HomePage() {
         const toDelete = prev.find((t) => t.id === id);
         if (toDelete) {
           // Revert impact on wallet
-          setWallets((w) =>
-            applyWalletImpact(
+          setWallets((w) => {
+            const updatedWallets = applyWalletImpact(
               w,
               toDelete.amount,
               toDelete.type,
               toDelete.paymentMethod,
               'revert'
-            )
-          );
+            );
+            syncWalletsToCloud(updatedWallets);
+            return updatedWallets;
+          });
         }
 
         const filtered = prev.filter((t) => t.id !== id);
         setLocalTransactions(filtered);
+        deleteTransactionFromCloud(id);
         fetch('/api/transactions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -320,6 +337,7 @@ export default function HomePage() {
   const handleSaveBudget = useCallback((updated: BudgetConfig) => {
     setBudget(updated);
     setLocalBudget(updated);
+    syncBudgetToCloud(updated);
     fetch('/api/budget', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -331,6 +349,7 @@ export default function HomePage() {
   const handleSaveWallets = useCallback((updated: WalletBalances) => {
     setWallets(updated);
     setLocalWallets(updated);
+    syncWalletsToCloud(updated);
     fetch('/api/wallets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -342,6 +361,7 @@ export default function HomePage() {
   const handleSavePresets = useCallback((updated: QuickPreset[]) => {
     setPresets(updated);
     setLocalQuickPresets(updated);
+    syncPresetsToCloud(updated);
     fetch('/api/presets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -384,7 +404,9 @@ export default function HomePage() {
         updated = [newTab, ...prev];
       }
 
+      const savedTab = tabData.id ? updated.find((t) => t.id === tabData.id)! : updated[0];
       setLocalTabs(updated);
+      syncTabToCloud(savedTab);
       fetch('/api/tabs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -410,7 +432,9 @@ export default function HomePage() {
             ? { ...t, status: 'settled' as const, settledAt: Date.now() }
             : t
         );
+        const settledTab = updated.find((t) => t.id === tab.id)!;
         setLocalTabs(updated);
+        syncTabToCloud(settledTab);
         fetch('/api/tabs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -452,13 +476,15 @@ export default function HomePage() {
         // Adjust wallet balance directly without logging a transaction entry
         setWallets((w) => {
           const isIncome = tab.type === 'owed_to_you';
-          return applyWalletImpact(
+          const updatedWallets = applyWalletImpact(
             w,
             tab.amount,
             isIncome ? 'income' : 'expense',
             paymentMethod,
             'apply'
           );
+          syncWalletsToCloud(updatedWallets);
+          return updatedWallets;
         });
       }
     },
@@ -469,6 +495,7 @@ export default function HomePage() {
     setTabs((prev) => {
       const filtered = prev.filter((t) => t.id !== id);
       setLocalTabs(filtered);
+      deleteTabFromCloud(id);
       fetch('/api/tabs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -498,11 +525,14 @@ export default function HomePage() {
           paymentMethod: dueData.paymentMethod || 'UPI / Bank',
           status: 'pending',
           notes: dueData.notes || '',
+          createdAt: now,
         };
         updated = [newDue, ...prev];
       }
 
+      const savedDue = dueData.id ? updated.find((d) => d.id === dueData.id)! : updated[0];
       setLocalDues(updated);
+      syncDueToCloud(savedDue);
       fetch('/api/dues', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -527,7 +557,9 @@ export default function HomePage() {
               }
             : d
         );
+        const paidDue = updated.find((d) => d.id === due.id)!;
         setLocalDues(updated);
+        syncDueToCloud(paidDue);
         fetch('/api/dues', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -557,6 +589,7 @@ export default function HomePage() {
     setDues((prev) => {
       const filtered = prev.filter((d) => d.id !== id);
       setLocalDues(filtered);
+      deleteDueFromCloud(id);
       fetch('/api/dues', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -679,6 +712,22 @@ export default function HomePage() {
     const reminders = calculateMonthlyDueReminders(dues);
     return reminders.filter((r) => !r.isPaidThisMonth && (r.isOverdue || r.isDueToday)).length;
   }, [dues]);
+
+  // Automatically sync full analytics snapshots to Supabase Cloud whenever data updates
+  useEffect(() => {
+    if (isSupabaseConfigured) {
+      const timer = setTimeout(() => {
+        syncAnalyticsSnapshotToCloud(
+          financialStats,
+          dailySummary,
+          cashflowData,
+          categoryExpenses,
+          categoryIncomes
+        );
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [financialStats, dailySummary, cashflowData, categoryExpenses, categoryIncomes]);
 
   return (
     <div className="min-h-screen w-full bg-[#f4f4f5] flex flex-col selection:bg-black selection:text-white">
