@@ -1,10 +1,60 @@
 -- =========================================================
--- FINTRACK POSTGRESQL SCHEMA FOR SUPABASE
+-- FINTRACK POSTGRESQL SCHEMA & MIGRATION FOR SUPABASE
 -- Run this in the Supabase SQL Editor (supabase.com -> SQL Editor)
 -- =========================================================
 
 -- 1. Enable UUID Extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- =========================================================
+-- SAFE MIGRATION FOR EXISTING TABLES
+-- Updates existing columns and constraints so data never fails to save
+-- =========================================================
+DO $$ 
+BEGIN
+    -- Fix monthly_dues status constraint and user_id if table exists
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'monthly_dues') THEN
+        ALTER TABLE public.monthly_dues DROP CONSTRAINT IF EXISTS monthly_dues_status_check;
+        ALTER TABLE public.monthly_dues ADD CONSTRAINT monthly_dues_status_check CHECK (status IN ('pending', 'unpaid', 'paid'));
+        ALTER TABLE public.monthly_dues ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+        ALTER TABLE public.monthly_dues ALTER COLUMN user_id SET DEFAULT 'default';
+    END IF;
+
+    -- Fix transactions is_monthly_due and user_id if table exists
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'transactions') THEN
+        ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS is_monthly_due BOOLEAN DEFAULT false;
+        ALTER TABLE public.transactions ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+        ALTER TABLE public.transactions ALTER COLUMN user_id SET DEFAULT 'default';
+    END IF;
+
+    -- Fix wallets user_id if table exists
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'wallets') THEN
+        ALTER TABLE public.wallets ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+        ALTER TABLE public.wallets ALTER COLUMN user_id SET DEFAULT 'default';
+    END IF;
+
+    -- Fix tabs user_id if table exists
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'tabs') THEN
+        ALTER TABLE public.tabs ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+        ALTER TABLE public.tabs ALTER COLUMN user_id SET DEFAULT 'default';
+    END IF;
+
+    -- Fix budget_config user_id if table exists
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'budget_config') THEN
+        ALTER TABLE public.budget_config ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+        ALTER TABLE public.budget_config ALTER COLUMN user_id SET DEFAULT 'default';
+    END IF;
+
+    -- Fix quick_presets user_id if table exists
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'quick_presets') THEN
+        ALTER TABLE public.quick_presets ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+        ALTER TABLE public.quick_presets ALTER COLUMN user_id SET DEFAULT 'default';
+    END IF;
+END $$;
+
+-- =========================================================
+-- TABLE DEFINITIONS (Created if they do not already exist)
+-- =========================================================
 
 -- 2. Transactions Table
 CREATE TABLE IF NOT EXISTS public.transactions (

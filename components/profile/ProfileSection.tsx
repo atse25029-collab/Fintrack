@@ -129,48 +129,66 @@ export default function ProfileSection({
   const handleUploadToCloud = async () => {
     setSyncing(true);
     setMessage(null);
-    const success = await uploadLocalDataToCloud({
-      transactions,
-      wallets,
-      tabs,
-      dues,
-      presets,
-      budget,
-    });
-    setSyncing(false);
-
-    if (success) {
-      setLastSyncedTime(new Date().toLocaleTimeString());
-      setMessage({
-        type: 'success',
-        text: 'All local data (ledger, wallets, tabs, dues) successfully backed up to Supabase Cloud!',
+    try {
+      const result = await uploadLocalDataToCloud({
+        transactions,
+        wallets,
+        tabs,
+        dues,
+        presets,
+        budget,
       });
-    } else {
+
+      if (result.success) {
+        setLastSyncedTime(new Date().toLocaleTimeString());
+        setMessage({
+          type: 'success',
+          text: `Backup complete! ${dues.length} dues, ${transactions.length} transactions, and ${tabs.length} tabs backed up to Supabase.`,
+        });
+      } else {
+        setMessage({
+          type: 'error',
+          text: result.error || 'Cloud backup failed. Check your Supabase tables in SQL Editor.',
+        });
+      }
+    } catch (err: any) {
       setMessage({
         type: 'error',
-        text: 'Cloud backup failed. Check your Supabase database connection and table schema.',
+        text: err.message || 'Cloud backup encountered an error.',
       });
+    } finally {
+      setSyncing(false);
     }
   };
 
   const handleDownloadFromCloud = async () => {
     setSyncing(true);
     setMessage(null);
-    const cloudData = await fetchAllCloudData();
-    setSyncing(false);
-
-    if (cloudData) {
-      onCloudSyncSuccess(cloudData);
-      setLastSyncedTime(new Date().toLocaleTimeString());
-      setMessage({
-        type: 'success',
-        text: 'Successfully downloaded and reconciled latest cloud data from Supabase!',
-      });
-    } else {
+    try {
+      const cloudData = await fetchAllCloudData();
+      if (cloudData) {
+        onCloudSyncSuccess(cloudData);
+        setLastSyncedTime(new Date().toLocaleTimeString());
+        const duesCount = cloudData.dues ? cloudData.dues.length : 0;
+        const txCount = cloudData.transactions ? cloudData.transactions.length : 0;
+        const tabCount = cloudData.tabs ? cloudData.tabs.length : 0;
+        setMessage({
+          type: 'success',
+          text: `Restore complete! Successfully retrieved ${duesCount} monthly dues, ${txCount} transactions, and ${tabCount} tabs from Supabase.`,
+        });
+      } else {
+        setMessage({
+          type: 'error',
+          text: 'No cloud data found. Ensure tables are created using schema.sql in Supabase.',
+        });
+      }
+    } catch (err: any) {
       setMessage({
         type: 'error',
-        text: 'Failed to download from Supabase. Ensure tables are created using schema.sql.',
+        text: `Download failed: ${err.message || 'Check database connection'}.`,
       });
+    } finally {
+      setSyncing(false);
     }
   };
 

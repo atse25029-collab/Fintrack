@@ -320,9 +320,18 @@ export async function fetchAllCloudData(): Promise<{
       client.from('budget_config').select('*').limit(1).maybeSingle(),
     ]);
 
+    if (duesRes.error) {
+      console.error('Error fetching dues from Supabase:', duesRes.error);
+      throw new Error(`Failed to fetch monthly dues: ${duesRes.error.message}`);
+    }
+    if (txRes.error) {
+      console.error('Error fetching transactions from Supabase:', txRes.error);
+      throw new Error(`Failed to fetch transactions: ${txRes.error.message}`);
+    }
+
     const result: any = {};
 
-    if (txRes.data) {
+    if (txRes.data && Array.isArray(txRes.data)) {
       result.transactions = txRes.data.map((row) => ({
         id: row.id,
         type: row.type,
@@ -348,7 +357,7 @@ export async function fetchAllCloudData(): Promise<{
       };
     }
 
-    if (tabsRes.data) {
+    if (tabsRes.data && Array.isArray(tabsRes.data)) {
       result.tabs = tabsRes.data.map((row) => ({
         id: row.id,
         personName: row.person_name,
@@ -363,7 +372,7 @@ export async function fetchAllCloudData(): Promise<{
       }));
     }
 
-    if (duesRes.data) {
+    if (duesRes.data && Array.isArray(duesRes.data)) {
       result.dues = duesRes.data.map((row) => ({
         id: row.id,
         title: row.title,
@@ -372,13 +381,13 @@ export async function fetchAllCloudData(): Promise<{
         paymentMethod: row.payment_method,
         dueDayOfMonth: Number(row.due_day_of_month),
         notes: row.notes || undefined,
-        status: row.status,
+        status: row.status === 'paid' ? 'paid' : 'pending',
         lastPaidDate: row.last_paid_date || undefined,
-        createdAt: Number(row.created_at),
+        createdAt: Number(row.created_at || Date.now()),
       }));
     }
 
-    if (presetsRes.data && presetsRes.data.length > 0) {
+    if (presetsRes.data && Array.isArray(presetsRes.data) && presetsRes.data.length > 0) {
       result.presets = presetsRes.data.map((row) => ({
         id: row.id,
         label: row.label,
@@ -402,7 +411,7 @@ export async function fetchAllCloudData(): Promise<{
     return result;
   } catch (err) {
     console.error('Error fetching data from Supabase:', err);
-    return null;
+    throw err;
   }
 }
 
@@ -413,9 +422,9 @@ export async function uploadLocalDataToCloud(data: {
   dues: MonthlyDue[];
   presets: QuickPreset[];
   budget: BudgetConfig;
-}): Promise<boolean> {
+}): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
-  if (!client) return false;
+  if (!client) return { success: false, error: 'Supabase client is not configured' };
 
   try {
     const user = await getCurrentUser();
@@ -431,19 +440,20 @@ export async function uploadLocalDataToCloud(data: {
         category: tx.category,
         description: tx.description,
         date: tx.date,
-        time: tx.time,
-        timestamp: tx.timestamp,
+        time: tx.time || '00:00:00',
+        timestamp: tx.timestamp || new Date().toISOString(),
         payment_method: tx.paymentMethod,
         is_monthly_due: Boolean(tx.isMonthlyDue),
         notes: tx.notes || null,
-        created_at: tx.createdAt,
+        created_at: tx.createdAt || Date.now(),
         synced: true,
       }));
-      await client.from('transactions').upsert(rows, { onConflict: 'id' });
+      const { error } = await client.from('transactions').upsert(rows, { onConflict: 'id' });
+      if (error) throw new Error(`Transactions error: ${error.message}`);
     }
 
     // 2. Wallets upsert
-    await client.from('wallets').upsert(
+    const { error: walletErr } = await client.from('wallets').upsert(
       {
         user_id: userId,
         cash_in_hand: data.wallets.cashInHand,
@@ -452,6 +462,7 @@ export async function uploadLocalDataToCloud(data: {
       },
       { onConflict: 'user_id' }
     );
+    if (walletErr) throw new Error(`Wallets error: ${walletErr.message}`);
 
     // 3. Tabs upsert
     if (data.tabs.length > 0) {
@@ -466,9 +477,10 @@ export async function uploadLocalDataToCloud(data: {
         status: t.status,
         settled_at: t.settledAt || null,
         notes: t.notes || null,
-        created_at: t.createdAt,
+        created_at: t.createdAt || Date.now(),
       }));
-      await client.from('tabs').upsert(tabRows, { onConflict: 'id' });
+      const { error } = await client.from('tabs').upsert(tabRows, { onConflict: 'id' });
+      if (error) throw new Error(`Tabs error: ${error.message}`);
     }
 
     // 4. Monthly Dues upsert
@@ -482,11 +494,12 @@ export async function uploadLocalDataToCloud(data: {
         payment_method: d.paymentMethod,
         due_day_of_month: d.dueDayOfMonth,
         notes: d.notes || null,
-        status: d.status,
+        status: d.status === 'paid' ? 'paid' : 'pending',
         last_paid_date: d.lastPaidDate || null,
         created_at: d.createdAt || Date.now(),
       }));
-      await client.from('monthly_dues').upsert(dueRows, { onConflict: 'id' });
+      const { error } = await client.from('monthly_dues').upsert(dueRows, { onConflict: 'id' });
+      if (error) throw new Error(`Monthly dues error: ${error.message}`);
     }
 
     // 5. Presets upsert
@@ -500,12 +513,14 @@ export async function uploadLocalDataToCloud(data: {
         type: p.type || 'expense',
         payment_method: p.paymentMethod,
         icon_name: p.iconName || 'tag',
+        created_at: Date.now(),
       }));
-      await client.from('quick_presets').upsert(presetRows, { onConflict: 'id' });
+      const { error } = await client.from('quick_presets').upsert(presetRows, { onConflict: 'id' });
+      if (error) throw new Error(`Presets error: ${error.message}`);
     }
 
     // 6. Budget config upsert
-    await client.from('budget_config').upsert(
+    const { error: budgetErr } = await client.from('budget_config').upsert(
       {
         user_id: userId,
         monthly_limit: data.budget.monthlyLimit,
@@ -515,10 +530,11 @@ export async function uploadLocalDataToCloud(data: {
       },
       { onConflict: 'user_id' }
     );
+    if (budgetErr) throw new Error(`Budget error: ${budgetErr.message}`);
 
-    return true;
-  } catch (err) {
+    return { success: true };
+  } catch (err: any) {
     console.error('Failed to upload data to Supabase:', err);
-    return false;
+    return { success: false, error: err.message || 'Upload failed' };
   }
 }

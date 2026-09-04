@@ -109,8 +109,9 @@ export default function HomePage() {
   const [isDueModalOpen, setIsDueModalOpen] = useState(false);
   const [editingDue, setEditingDue] = useState<MonthlyDue | null>(null);
 
-  // Initial load from storage and background sync with Vercel API
+  // Initial load from storage and background sync
   useEffect(() => {
+    // 1. Initial load from local device storage
     setTransactions(getLocalTransactions());
     setBudget(getLocalBudget());
     setTabs(getLocalTabs());
@@ -118,6 +119,41 @@ export default function HomePage() {
     setWallets(getLocalWallets());
     setPresets(getLocalQuickPresets());
 
+    // 2. Fetch latest cloud backup from Supabase if connected
+    if (isSupabaseConfigured) {
+      fetchAllCloudData()
+        .then((cloudData) => {
+          if (cloudData) {
+            if (cloudData.transactions && cloudData.transactions.length > 0) {
+              setTransactions(cloudData.transactions);
+              setLocalTransactions(cloudData.transactions);
+            }
+            if (cloudData.dues && cloudData.dues.length > 0) {
+              setDues(cloudData.dues);
+              setLocalDues(cloudData.dues);
+            }
+            if (cloudData.tabs && cloudData.tabs.length > 0) {
+              setTabs(cloudData.tabs);
+              setLocalTabs(cloudData.tabs);
+            }
+            if (cloudData.wallets) {
+              setWallets(cloudData.wallets);
+              setLocalWallets(cloudData.wallets);
+            }
+            if (cloudData.presets && cloudData.presets.length > 0) {
+              setPresets(cloudData.presets);
+              setLocalQuickPresets(cloudData.presets);
+            }
+            if (cloudData.budget) {
+              setBudget(cloudData.budget);
+              setLocalBudget(cloudData.budget);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+
+    // 3. Background serverless fallback sync
     syncWithVercelServer().then((synced) => {
       if (synced) {
         if (synced.transactions?.length) setTransactions(synced.transactions);
@@ -686,9 +722,16 @@ export default function HomePage() {
         setTabs(cloudData.tabs);
         setLocalTabs(cloudData.tabs);
       }
-      if (cloudData.dues) {
+      if (cloudData.dues && cloudData.dues.length > 0) {
         setDues(cloudData.dues);
         setLocalDues(cloudData.dues);
+        cloudData.dues.forEach((d) => {
+          fetch('/api/dues', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(d),
+          }).catch(() => {});
+        });
       }
       if (cloudData.presets) {
         setPresets(cloudData.presets);
