@@ -1,5 +1,5 @@
 -- =========================================================
--- FINTRACK POSTGRESQL SCHEMA & MIGRATION FOR SUPABASE
+-- FINTRACK POSTGRESQL SCHEMA FOR SUPABASE
 -- Run this in the Supabase SQL Editor (supabase.com -> SQL Editor)
 -- =========================================================
 
@@ -7,57 +7,37 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- =========================================================
--- SAFE MIGRATION FOR EXISTING TABLES
--- Updates existing columns and constraints so data never fails to save
+-- STEP 1: CLEAN SLATE (Drops old tables & dependent policies)
+-- This avoids "cannot alter type of column used in policy" errors
 -- =========================================================
-DO $$ 
-BEGIN
-    -- Fix monthly_dues status constraint and user_id if table exists
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'monthly_dues') THEN
-        ALTER TABLE public.monthly_dues DROP CONSTRAINT IF EXISTS monthly_dues_status_check;
-        ALTER TABLE public.monthly_dues ADD CONSTRAINT monthly_dues_status_check CHECK (status IN ('pending', 'unpaid', 'paid'));
-        ALTER TABLE public.monthly_dues ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
-        ALTER TABLE public.monthly_dues ALTER COLUMN user_id SET DEFAULT 'default';
-    END IF;
+DROP POLICY IF EXISTS "Users can manage their own transactions" ON public.transactions;
+DROP POLICY IF EXISTS "Users can manage their own wallets" ON public.wallets;
+DROP POLICY IF EXISTS "Users can manage their own tabs" ON public.tabs;
+DROP POLICY IF EXISTS "Users can manage their own monthly dues" ON public.monthly_dues;
+DROP POLICY IF EXISTS "Users can manage their own quick presets" ON public.quick_presets;
+DROP POLICY IF EXISTS "Users can manage their own budget config" ON public.budget_config;
+DROP POLICY IF EXISTS "Allow all for transactions" ON public.transactions;
+DROP POLICY IF EXISTS "Allow all for wallets" ON public.wallets;
+DROP POLICY IF EXISTS "Allow all for tabs" ON public.tabs;
+DROP POLICY IF EXISTS "Allow all for monthly dues" ON public.monthly_dues;
+DROP POLICY IF EXISTS "Allow all for quick presets" ON public.quick_presets;
+DROP POLICY IF EXISTS "Allow all for budget config" ON public.budget_config;
+DROP POLICY IF EXISTS "Allow all for analytics snapshots" ON public.analytics_snapshots;
 
-    -- Fix transactions is_monthly_due and user_id if table exists
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'transactions') THEN
-        ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS is_monthly_due BOOLEAN DEFAULT false;
-        ALTER TABLE public.transactions ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
-        ALTER TABLE public.transactions ALTER COLUMN user_id SET DEFAULT 'default';
-    END IF;
-
-    -- Fix wallets user_id if table exists
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'wallets') THEN
-        ALTER TABLE public.wallets ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
-        ALTER TABLE public.wallets ALTER COLUMN user_id SET DEFAULT 'default';
-    END IF;
-
-    -- Fix tabs user_id if table exists
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'tabs') THEN
-        ALTER TABLE public.tabs ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
-        ALTER TABLE public.tabs ALTER COLUMN user_id SET DEFAULT 'default';
-    END IF;
-
-    -- Fix budget_config user_id if table exists
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'budget_config') THEN
-        ALTER TABLE public.budget_config ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
-        ALTER TABLE public.budget_config ALTER COLUMN user_id SET DEFAULT 'default';
-    END IF;
-
-    -- Fix quick_presets user_id if table exists
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'quick_presets') THEN
-        ALTER TABLE public.quick_presets ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
-        ALTER TABLE public.quick_presets ALTER COLUMN user_id SET DEFAULT 'default';
-    END IF;
-END $$;
+DROP TABLE IF EXISTS public.analytics_snapshots CASCADE;
+DROP TABLE IF EXISTS public.monthly_dues CASCADE;
+DROP TABLE IF EXISTS public.tabs CASCADE;
+DROP TABLE IF EXISTS public.wallets CASCADE;
+DROP TABLE IF EXISTS public.quick_presets CASCADE;
+DROP TABLE IF EXISTS public.budget_config CASCADE;
+DROP TABLE IF EXISTS public.transactions CASCADE;
 
 -- =========================================================
--- TABLE DEFINITIONS (Created if they do not already exist)
+-- STEP 2: CREATE FRESH, UPDATED TABLES
 -- =========================================================
 
--- 2. Transactions Table
-CREATE TABLE IF NOT EXISTS public.transactions (
+-- 1. Transactions Table
+CREATE TABLE public.transactions (
     id TEXT PRIMARY KEY,
     user_id TEXT DEFAULT 'default',
     type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
@@ -74,18 +54,18 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     synced BOOLEAN DEFAULT true
 );
 
-CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON public.transactions(user_id, date DESC);
+CREATE INDEX idx_transactions_user_date ON public.transactions(user_id, date DESC);
 
--- 3. Wallets Table (Physical Cash in Hand vs Bank/UPI in Account)
-CREATE TABLE IF NOT EXISTS public.wallets (
+-- 2. Wallets Table (Physical Cash in Hand vs Bank/UPI in Account)
+CREATE TABLE public.wallets (
     user_id TEXT PRIMARY KEY DEFAULT 'default',
     cash_in_hand NUMERIC NOT NULL DEFAULT 0,
     account_balance NUMERIC NOT NULL DEFAULT 0,
     last_updated BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 );
 
--- 4. Tabs Table (Lent & Borrowed / Informal Debts)
-CREATE TABLE IF NOT EXISTS public.tabs (
+-- 3. Tabs Table (Lent & Borrowed / Informal Debts)
+CREATE TABLE public.tabs (
     id TEXT PRIMARY KEY,
     user_id TEXT DEFAULT 'default',
     person_name TEXT NOT NULL,
@@ -99,10 +79,10 @@ CREATE TABLE IF NOT EXISTS public.tabs (
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 );
 
-CREATE INDEX IF NOT EXISTS idx_tabs_user_status ON public.tabs(user_id, status);
+CREATE INDEX idx_tabs_user_status ON public.tabs(user_id, status);
 
--- 5. Monthly Dues Table (Supports both 'pending' and 'paid')
-CREATE TABLE IF NOT EXISTS public.monthly_dues (
+-- 4. Monthly Dues Table (Supports both 'pending' and 'paid')
+CREATE TABLE public.monthly_dues (
     id TEXT PRIMARY KEY,
     user_id TEXT DEFAULT 'default',
     title TEXT NOT NULL,
@@ -116,10 +96,10 @@ CREATE TABLE IF NOT EXISTS public.monthly_dues (
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 );
 
-CREATE INDEX IF NOT EXISTS idx_dues_user_status ON public.monthly_dues(user_id, status);
+CREATE INDEX idx_dues_user_status ON public.monthly_dues(user_id, status);
 
--- 6. Quick 1-Tap Presets Table
-CREATE TABLE IF NOT EXISTS public.quick_presets (
+-- 5. Quick 1-Tap Presets Table
+CREATE TABLE public.quick_presets (
     id TEXT PRIMARY KEY,
     user_id TEXT DEFAULT 'default',
     label TEXT NOT NULL,
@@ -131,8 +111,8 @@ CREATE TABLE IF NOT EXISTS public.quick_presets (
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 );
 
--- 7. Budget Config Table
-CREATE TABLE IF NOT EXISTS public.budget_config (
+-- 6. Budget Config Table
+CREATE TABLE public.budget_config (
     user_id TEXT PRIMARY KEY DEFAULT 'default',
     monthly_limit NUMERIC NOT NULL DEFAULT 25000,
     daily_allowance NUMERIC NOT NULL DEFAULT 600,
@@ -140,8 +120,8 @@ CREATE TABLE IF NOT EXISTS public.budget_config (
     currency_symbol TEXT NOT NULL DEFAULT '₹'
 );
 
--- 8. Analytics Snapshots Table (Dedicated storage for financial health, reports & charts)
-CREATE TABLE IF NOT EXISTS public.analytics_snapshots (
+-- 7. Analytics Snapshots Table (Dedicated storage for financial health, reports & charts)
+CREATE TABLE public.analytics_snapshots (
     id TEXT PRIMARY KEY,
     user_id TEXT DEFAULT 'default',
     snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -163,10 +143,10 @@ CREATE TABLE IF NOT EXISTS public.analytics_snapshots (
     updated_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 );
 
-CREATE INDEX IF NOT EXISTS idx_analytics_user_date ON public.analytics_snapshots(user_id, snapshot_date DESC);
+CREATE INDEX idx_analytics_user_date ON public.analytics_snapshots(user_id, snapshot_date DESC);
 
 -- =========================================================
--- ROW LEVEL SECURITY (RLS) POLICIES
+-- STEP 3: ROW LEVEL SECURITY (RLS) POLICIES
 -- Permissive policies allowing seamless operations for both
 -- authenticated user accounts and anonymous local sync.
 -- =========================================================
@@ -178,15 +158,6 @@ ALTER TABLE public.monthly_dues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.quick_presets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.budget_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.analytics_snapshots ENABLE ROW LEVEL SECURITY;
-
--- Drop existing policies if updating
-DROP POLICY IF EXISTS "Allow all for transactions" ON public.transactions;
-DROP POLICY IF EXISTS "Allow all for wallets" ON public.wallets;
-DROP POLICY IF EXISTS "Allow all for tabs" ON public.tabs;
-DROP POLICY IF EXISTS "Allow all for monthly dues" ON public.monthly_dues;
-DROP POLICY IF EXISTS "Allow all for quick presets" ON public.quick_presets;
-DROP POLICY IF EXISTS "Allow all for budget config" ON public.budget_config;
-DROP POLICY IF EXISTS "Allow all for analytics snapshots" ON public.analytics_snapshots;
 
 CREATE POLICY "Allow all for transactions" ON public.transactions FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all for wallets" ON public.wallets FOR ALL TO public, anon, authenticated USING (true) WITH CHECK (true);
