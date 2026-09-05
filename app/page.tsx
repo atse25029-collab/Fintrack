@@ -800,17 +800,6 @@ export default function HomePage() {
 
             {/* Today's Activity Stream & Quick 1-Tap Actions (Directly After Liquid Funds) */}
             <section className="space-y-3.5 sm:space-y-4">
-              <QuickAddBar
-                presets={presets}
-                onOpenPresetManager={() => setIsPresetModalOpen(true)}
-                onQuickAdd={handleQuickAdd}
-                onOpenCustomModal={(type) => {
-                  setEditingTx(null);
-                  setTxModalDefaultType(type);
-                  setIsTxModalOpen(true);
-                }}
-              />
-
               <DailyTimeline
                 transactions={transactions}
                 onDelete={handleDeleteTransaction}
@@ -821,6 +810,17 @@ export default function HomePage() {
                 onLogFirst={() => {
                   setEditingTx(null);
                   setTxModalDefaultType('expense');
+                  setIsTxModalOpen(true);
+                }}
+              />
+
+              <QuickAddBar
+                presets={presets}
+                onOpenPresetManager={() => setIsPresetModalOpen(true)}
+                onQuickAdd={handleQuickAdd}
+                onOpenCustomModal={(type) => {
+                  setEditingTx(null);
+                  setTxModalDefaultType(type);
                   setIsTxModalOpen(true);
                 }}
               />
