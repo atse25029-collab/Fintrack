@@ -45,9 +45,16 @@ export function formatCompactCurrency(amount: number): string {
   return `${isNeg ? '-' : ''}₹${formatted}`;
 }
 
+export function getLocalDateString(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function getExactRealTime(): { date: string; time: string; timestamp: string } {
   const now = new Date();
-  const date = now.toISOString().split('T')[0];
+  const date = getLocalDateString(now);
   const time = now.toTimeString().split(' ')[0]; // HH:mm:ss
   const timestamp = now.toISOString();
   return { date, time, timestamp };

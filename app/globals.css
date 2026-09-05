@@ -48,3 +48,59 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #a1a1aa;
 }
+
+/* ========================================================= */
+/* TRUE AMOLED PITCH-BLACK THEME STYLES (#000000)            */
+/* ========================================================= */
+html.amoled {
+  --background: #000000;
+  --foreground: #f4f4f5;
+  background-color: #000000 !important;
+  color: #f4f4f5 !important;
+}
+
+html.amoled body {
+  background-color: #000000 !important;
+  color: #f4f4f5 !important;
+}
+
+html.amoled .bg-white {
+  background-color: #09090b !important;
+  border-color: #27272a !important;
+}
+
+html.amoled .bg-zinc-50 {
+  background-color: #121214 !important;
+  border-color: #27272a !important;
+}
+
+html.amoled .bg-zinc-100 {
+  background-color: #18181b !important;
+  border-color: #3f3f46 !important;
+}
+
+html.amoled .text-zinc-950,
+html.amoled .text-zinc-900,
+html.amoled .text-zinc-800 {
+  color: #fafafa !important;
+}
+
+html.amoled .text-zinc-700,
+html.amoled .text-zinc-600,
+html.amoled .text-zinc-500 {
+  color: #a1a1aa !important;
+}
+
+html.amoled .border-zinc-200,
+html.amoled .border-zinc-100,
+html.amoled .border-zinc-300 {
+  border-color: #27272a !important;
+}
+
+html.amoled input,
+html.amoled textarea,
+html.amoled select {
+  background-color: #121214 !important;
+  color: #fafafa !important;
+  border-color: #27272a !important;
+}

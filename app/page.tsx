@@ -23,6 +23,18 @@ import MonthlyDuesManager from '@/components/dues/MonthlyDuesManager';
 import MonthlyDueModal from '@/components/dues/MonthlyDueModal';
 import AnalyticsView from '@/components/analytics/AnalyticsView';
 import ProfileSection from '@/components/profile/ProfileSection';
+import EarnFirstSafeSpendCard from '@/components/daily/EarnFirstSafeSpendCard';
+import PasteSmsModal from '@/components/daily/PasteSmsModal';
+import ReceiptScanModal from '@/components/daily/ReceiptScanModal';
+import MonthlyStatementModal from '@/components/analytics/MonthlyStatementModal';
+import {
+  getEarnFirstConfig,
+  setEarnFirstConfig,
+  computeEarnFirstState,
+  toggleRestDay,
+} from '@/lib/safeSpend/safeSpendEngine';
+import { getStoredTheme, applyTheme } from '@/lib/theme/themeService';
+import { ParsedSmsTransaction } from '@/lib/parser/smsParser';
 import { checkAndNotifyUpcomingDuesAndTabs } from '@/lib/notifications/notificationService';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import {
@@ -48,6 +60,8 @@ import {
   TransactionType,
   WalletBalances,
   QuickPreset,
+  EarnFirstConfig,
+  EarnFirstState,
 } from '@/lib/types';
 import {
   INITIAL_TRANSACTIONS,
@@ -64,6 +78,7 @@ import {
   calculateRecentCashflow,
   calculateMonthlyDueReminders,
   getExactRealTime,
+  getLocalDateString,
 } from '@/lib/utils';
 import {
   getLocalTransactions,
@@ -109,8 +124,30 @@ export default function HomePage() {
   const [isDueModalOpen, setIsDueModalOpen] = useState(false);
   const [editingDue, setEditingDue] = useState<MonthlyDue | null>(null);
 
+  // Earn-First Safe Spend & New Feature Modals State
+  const [earnFirstConfig, setEarnFirstConfigState] = useState<EarnFirstConfig>(getEarnFirstConfig());
+  const [earnFirstTick, setEarnFirstTick] = useState(0);
+  const [isPasteSmsOpen, setIsPasteSmsOpen] = useState(false);
+  const [isReceiptScanOpen, setIsReceiptScanOpen] = useState(false);
+  const [isStatementOpen, setIsStatementOpen] = useState(false);
+
+  // Compute live Earn-First Safe Spend State from current transactions, dues, and config
+  const earnFirstState = useMemo(() => {
+    return computeEarnFirstState(transactions, dues, earnFirstConfig);
+  }, [transactions, dues, earnFirstConfig, earnFirstTick]);
+
   // Initial load from storage and background sync
   useEffect(() => {
+    // 0. Initialize theme & Earn-First configuration
+    applyTheme(getStoredTheme());
+    setEarnFirstConfigState(getEarnFirstConfig());
+
+    const handleEarnFirstChanged = () => {
+      setEarnFirstConfigState(getEarnFirstConfig());
+      setEarnFirstTick((prev) => prev + 1);
+    };
+    window.addEventListener('fintrack_earn_first_changed', handleEarnFirstChanged);
+
     // 1. Initial load from local device storage
     setTransactions(getLocalTransactions());
     setBudget(getLocalBudget());
@@ -180,6 +217,7 @@ export default function HomePage() {
     window.addEventListener('fintrack_presets_changed', handleStorageChange);
 
     return () => {
+      window.removeEventListener('fintrack_earn_first_changed', handleEarnFirstChanged);
       window.removeEventListener('fintrack_data_changed', handleStorageChange);
       window.removeEventListener('fintrack_budget_changed', handleStorageChange);
       window.removeEventListener('fintrack_tabs_changed', handleStorageChange);
@@ -369,6 +407,80 @@ export default function HomePage() {
         time: realTime.time,
         timestamp: realTime.timestamp,
       });
+    },
+    [handleSaveTransaction]
+  );
+
+  // Earn-First Shift Logging Handler
+  const handleLogShift = useCallback(
+    (amount: number, description: string) => {
+      const realTime = getExactRealTime();
+      handleSaveTransaction({
+        description,
+        amount,
+        category: 'Salary / Daily Wage',
+        type: 'income',
+        paymentMethod: earnFirstConfig.defaultWallet,
+        date: realTime.date,
+        time: realTime.time,
+        timestamp: realTime.timestamp,
+        notes: 'Logged via Earn-First Shift Preset',
+      });
+      setEarnFirstTick((prev) => prev + 1);
+    },
+    [earnFirstConfig.defaultWallet, handleSaveTransaction]
+  );
+
+  // Earn-First Rest Day Toggle
+  const handleToggleRestDayAction = useCallback(() => {
+    const today = getLocalDateString(new Date());
+    toggleRestDay(today);
+    setEarnFirstTick((prev) => prev + 1);
+  }, []);
+
+  // Bank SMS Transaction Confirmation
+  const handleConfirmSmsTx = useCallback(
+    (parsed: ParsedSmsTransaction) => {
+      const realTime = getExactRealTime();
+      handleSaveTransaction({
+        description: parsed.description,
+        amount: parsed.amount,
+        category: parsed.category,
+        type: parsed.type,
+        paymentMethod: parsed.paymentMethod,
+        date: realTime.date,
+        time: realTime.time,
+        timestamp: realTime.timestamp,
+        notes: `SMS Log: "${parsed.rawText.substring(0, 45)}..."`,
+      });
+      setEarnFirstTick((prev) => prev + 1);
+    },
+    [handleSaveTransaction]
+  );
+
+  // AI Scanned Bill / UPI Screenshot Confirmation
+  const handleConfirmScannedTx = useCallback(
+    (scanned: {
+      amount: number;
+      description: string;
+      category: string;
+      type: TransactionType;
+      paymentMethod: PaymentMethod;
+      date: string;
+    }) => {
+      const realTime = getExactRealTime();
+      handleSaveTransaction({
+        description: scanned.description,
+        amount: scanned.amount,
+        category: scanned.category,
+        type: scanned.type,
+        paymentMethod: scanned.paymentMethod,
+        date: scanned.date || realTime.date,
+        time: realTime.time,
+        timestamp: realTime.timestamp,
+        notes: 'AI Scanned Bill / UPI Screenshot',
+      });
+      setEarnFirstTick((prev) => prev + 1);
     },
     [handleSaveTransaction]
   );
@@ -835,6 +947,18 @@ export default function HomePage() {
               onOpenAdjustModal={() => setIsWalletModalOpen(true)}
             />
 
+            {/* Improvised Earn-First Safe Spend Engine (Backward-Compatible & Urgency-Weighted) */}
+            <EarnFirstSafeSpendCard
+              state={earnFirstState}
+              config={earnFirstConfig}
+              onUpdateConfig={(newConfig) => {
+                const saved = setEarnFirstConfig(newConfig);
+                setEarnFirstConfigState(saved);
+              }}
+              onLogShift={handleLogShift}
+              onToggleRestDay={handleToggleRestDayAction}
+            />
+
             {/* Today's Activity Stream & Quick 1-Tap Actions (Directly After Liquid Funds) */}
             <section className="space-y-3.5 sm:space-y-4">
               <DailyTimeline
@@ -860,6 +984,8 @@ export default function HomePage() {
                   setTxModalDefaultType(type);
                   setIsTxModalOpen(true);
                 }}
+                onOpenPasteSms={() => setIsPasteSmsOpen(true)}
+                onOpenReceiptScan={() => setIsReceiptScanOpen(true)}
               />
             </section>
 
@@ -945,7 +1071,11 @@ export default function HomePage() {
         {/* VIEW 4: DEDICATED ANALYTICS */}
         {currentSection === 'analytics' && (
           <div className="animate-in fade-in duration-150 w-full max-w-full overflow-hidden">
-            <AnalyticsView transactions={transactions} budget={budget} />
+            <AnalyticsView
+              transactions={transactions}
+              budget={budget}
+              onOpenStatement={() => setIsStatementOpen(true)}
+            />
           </div>
         )}
 
@@ -961,6 +1091,7 @@ export default function HomePage() {
               budget={budget}
               onCloudSyncSuccess={handleCloudSyncSuccess}
               onClearAllData={handleClearAll}
+              onOpenStatement={() => setIsStatementOpen(true)}
             />
           </div>
         )}
@@ -1073,6 +1204,28 @@ export default function HomePage() {
         }}
         onSave={handleSaveDue}
         initialData={editingDue}
+      />
+
+      {/* Bank SMS Clipboard Parser Modal */}
+      <PasteSmsModal
+        isOpen={isPasteSmsOpen}
+        onClose={() => setIsPasteSmsOpen(false)}
+        onConfirmTransaction={handleConfirmSmsTx}
+      />
+
+      {/* AI Receipt & UPI Screenshot Scan Modal */}
+      <ReceiptScanModal
+        isOpen={isReceiptScanOpen}
+        onClose={() => setIsReceiptScanOpen(false)}
+        onConfirm={handleConfirmScannedTx}
+      />
+
+      {/* Monthly Financial Statement PDF / CSV Modal */}
+      <MonthlyStatementModal
+        isOpen={isStatementOpen}
+        onClose={() => setIsStatementOpen(false)}
+        transactions={transactions}
+        wallets={wallets}
       />
     </div>
   );

@@ -13,7 +13,10 @@ import {
   BarChart3,
   Clock,
   User,
+  Moon,
+  Sun,
 } from 'lucide-react';
+import { getStoredTheme, cycleTheme, ThemeMode } from '@/lib/theme/themeService';
 
 export type AppSection = 'daily' | 'tabs' | 'dues' | 'analytics' | 'profile';
 
@@ -36,6 +39,11 @@ export default function Header({
 }: HeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [liveTime, setLiveTime] = useState<string>('');
+  const [theme, setTheme] = useState<ThemeMode>('light');
+
+  useEffect(() => {
+    setTheme(getStoredTheme());
+  }, []);
 
   useEffect(() => {
     const updateTime = () => {
@@ -153,6 +161,22 @@ export default function Header({
         {/* Right Nav Actions: Scaled for mobile */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <NativeInstallButton />
+
+          {/* AMOLED Theme Switcher */}
+          <button
+            onClick={() => setTheme(cycleTheme(theme))}
+            aria-label="Toggle AMOLED Dark Theme"
+            title={`Current: ${theme.toUpperCase()} (Click to toggle)`}
+            className="p-1.5 sm:p-2 text-zinc-700 hover:text-black rounded-lg hover:bg-zinc-200 transition-colors shrink-0"
+          >
+            {theme === 'amoled' ? (
+              <Moon className="w-4 h-4 text-amber-300 fill-amber-300" />
+            ) : theme === 'system' ? (
+              <Moon className="w-4 h-4 text-zinc-600" />
+            ) : (
+              <Sun className="w-4 h-4 text-zinc-800" />
+            )}
+          </button>
 
           <button
             onClick={onOpenBudgetModal}

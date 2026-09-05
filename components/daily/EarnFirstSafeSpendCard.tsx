@@ -1,0 +1,263 @@
+'use client';
+
+import React, { useState } from 'react';
+import {
+  EarnFirstState,
+  EarnFirstConfig,
+  Transaction,
+  MonthlyDue,
+} from '@/lib/types';
+import { formatCurrency } from '@/lib/utils';
+import {
+  ShieldCheck,
+  Zap,
+  Coffee,
+  CheckCircle2,
+  AlertTriangle,
+  Settings2,
+  TrendingUp,
+  Briefcase,
+  Sparkles,
+} from 'lucide-react';
+import SafeSpendConfigModal from './SafeSpendConfigModal';
+
+interface EarnFirstSafeSpendCardProps {
+  state: EarnFirstState;
+  config: EarnFirstConfig;
+  onUpdateConfig: (newConfig: EarnFirstConfig) => void;
+  onLogShift: (amount: number, description: string) => void;
+  onToggleRestDay: () => void;
+}
+
+export default function EarnFirstSafeSpendCard({
+  state,
+  config,
+  onUpdateConfig,
+  onLogShift,
+  onToggleRestDay,
+}: EarnFirstSafeSpendCardProps) {
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
+
+  const isOverspent = state.remainingToday < 0;
+  const isHealthy = !isOverspent && state.percentUsed < 80;
+  const isClose = !isOverspent && state.percentUsed >= 80;
+
+  return (
+    <div className="w-full bg-white rounded-3xl border border-zinc-200 p-4 sm:p-5 shadow-sm space-y-4 transition-all">
+      {/* Top Header */}
+      <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-black text-white rounded-xl">
+            <Zap className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs sm:text-sm font-bold text-zinc-950">
+                Today&apos;s Earn-First Safe Spend
+              </h3>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold border ${
+                  state.shiftLoggedToday
+                    ? 'bg-zinc-100 text-black border-zinc-300'
+                    : state.isRestDay
+                    ? 'bg-zinc-100 text-zinc-800 border-zinc-300'
+                    : 'bg-zinc-50 text-zinc-600 border-zinc-200'
+                }`}
+              >
+                {state.shiftLoggedToday
+                  ? `Shift Logged (+${formatCurrency(state.wageEarnedToday)})`
+                  : state.isRestDay
+                  ? '🛋️ Rest Day'
+                  : '⏳ Shift Pending'}
+              </span>
+            </div>
+            <p className="text-[10px] sm:text-xs text-zinc-500">
+              {Math.round(config.workFactor * 100)}% shift probability • Auto-compensating rollover
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setIsConfigOpen(true)}
+          className="p-2 rounded-xl text-zinc-500 hover:text-black hover:bg-zinc-100 transition-colors"
+          title="Safe Spend Settings"
+        >
+          <Settings2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Main Metric & Progress Meter */}
+      <div className="p-3.5 sm:p-4 bg-zinc-50 rounded-2xl border border-zinc-200/80 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
+          <div>
+            <span className="text-[10px] uppercase font-mono tracking-wider text-zinc-500 block">
+              Safe Left to Spend Today
+            </span>
+            <div className="flex items-baseline gap-2">
+              <span
+                className={`text-2xl sm:text-3xl font-mono font-black tracking-tight ${
+                  isOverspent
+                    ? 'text-red-600'
+                    : isClose
+                    ? 'text-amber-600'
+                    : 'text-zinc-950'
+                }`}
+              >
+                {formatCurrency(Math.max(0, state.remainingToday))}
+              </span>
+              {isOverspent && (
+                <span className="text-xs font-mono font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-md border border-red-200">
+                  Overspent by {formatCurrency(Math.abs(state.remainingToday))}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="text-right sm:text-right text-[11px] font-mono text-zinc-600 space-y-0.5">
+            <div>
+              Allowance: <strong className="text-zinc-900">{formatCurrency(state.totalAllowanceToday)}</strong>
+              {state.carriedRollover !== 0 && (
+                <span
+                  className={`ml-1 font-bold ${
+                    state.carriedRollover > 0 ? 'text-emerald-600' : 'text-amber-600'
+                  }`}
+                >
+                  ({state.carriedRollover > 0 ? '+' : ''}
+                  {formatCurrency(state.carriedRollover)} rollover)
+                </span>
+              )}
+            </div>
+            <div>
+              Spent Today: <strong className="text-zinc-900">{formatCurrency(state.spentToday)}</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="space-y-1">
+          <div className="w-full h-2.5 bg-zinc-200 rounded-full overflow-hidden p-0.5">
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${
+                isOverspent
+                  ? 'bg-red-600'
+                  : isClose
+                  ? 'bg-amber-500'
+                  : 'bg-black'
+              }`}
+              style={{ width: `${Math.min(100, state.percentUsed)}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
+            <span>{state.percentUsed}% of safe limit used</span>
+            <span>
+              {isOverspent
+                ? 'Compensates on next shift'
+                : isClose
+                ? 'Approaching limit'
+                : 'Spending safely'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 1-Tap Shift Logging Presets */}
+      <div className="space-y-2">
+        <span className="text-[10px] uppercase font-mono tracking-wider text-zinc-500 block">
+          1-Tap Shift Logger &amp; Day Off Toggle
+        </span>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {/* Half Shift */}
+          <button
+            onClick={() => onLogShift(100, 'Half Shift Wage')}
+            className="flex items-center justify-center gap-1.5 py-2 px-2 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 transition-all active:scale-95"
+          >
+            <Briefcase className="w-3.5 h-3.5 text-zinc-600" />
+            <span>+₹100 Half</span>
+          </button>
+
+          {/* Full Shift (Configured expected wage) */}
+          <button
+            onClick={() => onLogShift(config.expectedDailyWage, 'Daily Shift Wage')}
+            className="flex items-center justify-center gap-1.5 py-2 px-2 bg-black hover:bg-zinc-800 border border-black rounded-xl text-xs font-semibold text-white transition-all active:scale-95 shadow-xs"
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-300" />
+            <span>+₹{config.expectedDailyWage} Full Shift</span>
+          </button>
+
+          {/* Overtime */}
+          <button
+            onClick={() => onLogShift(350, 'Overtime / Double Shift Wage')}
+            className="flex items-center justify-center gap-1.5 py-2 px-2 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 transition-all active:scale-95"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-zinc-600" />
+            <span>+₹350 OT</span>
+          </button>
+
+          {/* Rest Day */}
+          <button
+            onClick={onToggleRestDay}
+            className={`flex items-center justify-center gap-1.5 py-2 px-2 border rounded-xl text-xs font-semibold transition-all active:scale-95 ${
+              state.isRestDay
+                ? 'bg-zinc-900 text-white border-zinc-900'
+                : 'bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200'
+            }`}
+          >
+            <Coffee className="w-3.5 h-3.5" />
+            <span>{state.isRestDay ? 'Work Mode' : 'Rest Day'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Dues Shield & Cushion Status */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1 border-t border-zinc-100">
+        {/* Dues Shield Info */}
+        <div className="p-2.5 bg-zinc-50 rounded-xl border border-zinc-200/70 flex items-start gap-2">
+          <ShieldCheck className="w-4 h-4 text-black shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <span className="font-semibold text-zinc-900 text-[11px] block">
+              🛡️ Dues Shield:{' '}
+              {state.duesShieldToday > 0
+                ? `${formatCurrency(state.duesShieldToday)} reserved`
+                : 'Active'}
+            </span>
+            <p className="text-[10px] text-zinc-500">
+              {state.nextUrgentDue
+                ? `Next: ${state.nextUrgentDue.title} (${formatCurrency(state.nextUrgentDue.amount)}) in ${state.nextUrgentDue.daysLeft} days`
+                : 'All upcoming monthly dues are protected.'}
+            </p>
+          </div>
+        </div>
+
+        {/* Rest-Day Cushion & Rollover Info */}
+        <div className="p-2.5 bg-zinc-50 rounded-xl border border-zinc-200/70 flex items-start gap-2">
+          <TrendingUp className="w-4 h-4 text-black shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <span className="font-semibold text-zinc-900 text-[11px] block">
+              🛋️ Cushion Fund: {formatCurrency(state.restDayCushion)}
+            </span>
+            <p className="text-[10px] text-zinc-500">
+              Weekly Net:{' '}
+              <span
+                className={`font-mono font-bold ${
+                  state.weeklyNetRollover >= 0 ? 'text-emerald-600' : 'text-amber-600'
+                }`}
+              >
+                {state.weeklyNetRollover >= 0 ? '+' : ''}
+                {formatCurrency(state.weeklyNetRollover)}
+              </span>{' '}
+              ({state.weeklyNetRollover >= 0 ? 'ahead of plan' : 'tightening'})
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Config Modal */}
+      <SafeSpendConfigModal
+        isOpen={isConfigOpen}
+        onClose={() => setIsConfigOpen(false)}
+        config={config}
+        onSave={onUpdateConfig}
+      />
+    </div>
+  );
+}

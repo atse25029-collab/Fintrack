@@ -193,6 +193,34 @@ export interface QuickPreset {
     | 'tag'
     | 'wallet'
     | 'trending-up';
+}// Earn-First Safe Spend Engine Configuration & Live State
+export interface EarnFirstConfig {
+  expectedDailyWage: number;       // default 200
+  workFactor: number;              // default 0.70 (e.g. 5 days a week)
+  defaultWallet: 'Cash' | 'UPI / Bank'; // default 'Cash'
+  duesReserveCapPercent?: number;  // max % of a single shift that can be reserved (default 40%)
 }
 
-
+export interface EarnFirstState {
+  date: string;
+  shiftLoggedToday: boolean;
+  wageEarnedToday: number;
+  basePocketAllowance: number;
+  carriedRollover: number;         // surplus (+) or deficit (-) from previous days
+  totalAllowanceToday: number;     // base + carriedRollover
+  spentToday: number;              // non-due expenses today
+  remainingToday: number;          // totalAllowanceToday - spentToday
+  duesShieldToday: number;         // amount locked away for upcoming dues today
+  restDayCushion: number;          // accumulated surplus buffer for off-days
+  weeklyNetRollover: number;       // net surplus/deficit this week
+  monthlyNetRollover: number;      // net surplus/deficit this month
+  isRestDay: boolean;
+  percentUsed: number;
+  nextUrgentDue: {
+    id: string;
+    title: string;
+    daysLeft: number;
+    amount: number;
+    dailyUrgencyCut: number;
+  } | null;
+}

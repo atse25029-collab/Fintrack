@@ -37,9 +37,12 @@ import {
   Database,
   ExternalLink,
   Smartphone,
-  HardDrive,
   Bell,
   BellRing,
+  Moon,
+  Sun,
+  FileText,
+  HardDrive,
 } from 'lucide-react';
 import {
   isNotificationSupported,
@@ -50,6 +53,7 @@ import {
   sendTestNotification,
   NotificationPreferences,
 } from '@/lib/notifications/notificationService';
+import { getStoredTheme, applyTheme, ThemeMode } from '@/lib/theme/themeService';
 
 interface ProfileSectionProps {
   transactions: Transaction[];
@@ -67,6 +71,7 @@ interface ProfileSectionProps {
     budget?: BudgetConfig;
   }) => void;
   onClearAllData: () => void;
+  onOpenStatement?: () => void;
 }
 
 export default function ProfileSection({
@@ -78,6 +83,7 @@ export default function ProfileSection({
   budget,
   onCloudSyncSuccess,
   onClearAllData,
+  onOpenStatement,
 }: ProfileSectionProps) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -99,10 +105,19 @@ export default function ProfileSection({
   const [testingNotif, setTestingNotif] = useState(false);
   const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
 
+  // Appearance Theme State
+  const [theme, setTheme] = useState<ThemeMode>('light');
+
   useEffect(() => {
     setNotifPermission(getNotificationPermission());
     setNotifPrefs(getNotificationPreferences());
+    setTheme(getStoredTheme());
   }, []);
+
+  const handleSetTheme = (newTheme: ThemeMode) => {
+    setTheme(newTheme);
+    applyTheme(newTheme);
+  };
 
   const handleRequestPermission = async () => {
     const granted = await requestNotificationPermission();
@@ -676,6 +691,78 @@ export default function ProfileSection({
           </button>
         </div>
       </div>
+
+      {/* AMOLED Theme & Appearance Card */}
+      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-zinc-100 rounded-xl text-black">
+            <Moon className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="text-xs sm:text-sm font-bold text-zinc-950">Appearance &amp; Display</h3>
+            <p className="text-[10px] sm:text-xs text-zinc-500">
+              Pure AMOLED black mode for battery saving and night contrast
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 pt-1">
+          {[
+            { id: 'light', label: 'Light', icon: Sun, desc: 'Clean White' },
+            { id: 'amoled', label: 'AMOLED', icon: Moon, desc: 'Pitch Black #000' },
+            { id: 'system', label: 'Auto', icon: Smartphone, desc: 'System Match' },
+          ].map((item) => {
+            const Icon = item.icon;
+            const active = theme === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleSetTheme(item.id as ThemeMode)}
+                className={`p-3 rounded-xl border text-center transition-all ${
+                  active
+                    ? 'bg-black text-white border-black shadow-xs'
+                    : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
+                }`}
+              >
+                <Icon className="w-4 h-4 mx-auto mb-1" />
+                <span className="block text-xs font-bold">{item.label}</span>
+                <span className={`block text-[9px] ${active ? 'text-zinc-300' : 'text-zinc-500'}`}>
+                  {item.desc}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Monthly Financial Statement Card */}
+      {onOpenStatement && (
+        <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-zinc-100 rounded-xl text-black">
+              <FileText className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs sm:text-sm font-bold text-zinc-950">
+                Monthly Financial Statement
+              </h3>
+              <p className="text-[10px] sm:text-xs text-zinc-500">
+                Generate printable PDF reports &amp; download CSV spreadsheets
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenStatement}
+            className="flex items-center gap-1.5 px-3 py-2 bg-black hover:bg-zinc-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-all active:scale-95 shrink-0"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Open Statement</span>
+          </button>
+        </div>
+      )}
 
       {/* Local Device Diagnostics & Stats */}
       <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-3">

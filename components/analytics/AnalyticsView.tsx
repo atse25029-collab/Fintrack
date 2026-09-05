@@ -17,14 +17,16 @@ import {
   CreditCard,
   Clock,
   Sparkles,
+  FileText,
 } from 'lucide-react';
 
 interface AnalyticsViewProps {
   transactions: Transaction[];
   budget: BudgetConfig;
+  onOpenStatement?: () => void;
 }
 
-export default function AnalyticsView({ transactions, budget }: AnalyticsViewProps) {
+export default function AnalyticsView({ transactions, budget, onOpenStatement }: AnalyticsViewProps) {
   const [timeframe, setTimeframe] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
   const dailyData = useMemo(() => calculateDailyAnalytics(transactions, 14), [transactions]);
@@ -104,38 +106,51 @@ export default function AnalyticsView({ transactions, budget }: AnalyticsViewPro
           </p>
         </div>
 
-        {/* Timeframe Selector */}
-        <div className="grid grid-cols-3 gap-1 p-1 bg-zinc-100 rounded-xl border border-zinc-200 text-xs font-semibold w-full sm:w-auto">
-          <button
-            onClick={() => setTimeframe('daily')}
-            className={`py-1.5 px-2 rounded-lg text-center transition-all ${
-              timeframe === 'daily'
-                ? 'bg-black text-white shadow-sm'
-                : 'text-zinc-600 hover:text-black'
-            }`}
-          >
-            Daily
-          </button>
-          <button
-            onClick={() => setTimeframe('weekly')}
-            className={`py-1.5 px-2 rounded-lg text-center transition-all ${
-              timeframe === 'weekly'
-                ? 'bg-black text-white shadow-sm'
-                : 'text-zinc-600 hover:text-black'
-            }`}
-          >
-            Weekly
-          </button>
-          <button
-            onClick={() => setTimeframe('monthly')}
-            className={`py-1.5 px-2 rounded-lg text-center transition-all ${
-              timeframe === 'monthly'
-                ? 'bg-black text-white shadow-sm'
-                : 'text-zinc-600 hover:text-black'
-            }`}
-          >
-            Monthly
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {onOpenStatement && (
+            <button
+              type="button"
+              onClick={onOpenStatement}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-black hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-all active:scale-95 shrink-0"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Statement PDF</span>
+            </button>
+          )}
+
+          {/* Timeframe Selector */}
+          <div className="grid grid-cols-3 gap-1 p-1 bg-zinc-100 rounded-xl border border-zinc-200 text-xs font-semibold w-full sm:w-auto">
+            <button
+              onClick={() => setTimeframe('daily')}
+              className={`py-1.5 px-2 rounded-lg text-center transition-all ${
+                timeframe === 'daily'
+                  ? 'bg-black text-white shadow-sm'
+                  : 'text-zinc-600 hover:text-black'
+              }`}
+            >
+              Daily
+            </button>
+            <button
+              onClick={() => setTimeframe('weekly')}
+              className={`py-1.5 px-2 rounded-lg text-center transition-all ${
+                timeframe === 'weekly'
+                  ? 'bg-black text-white shadow-sm'
+                  : 'text-zinc-600 hover:text-black'
+              }`}
+            >
+              Weekly
+            </button>
+            <button
+              onClick={() => setTimeframe('monthly')}
+              className={`py-1.5 px-2 rounded-lg text-center transition-all ${
+                timeframe === 'monthly'
+                  ? 'bg-black text-white shadow-sm'
+                  : 'text-zinc-600 hover:text-black'
+              }`}
+            >
+              Monthly
+            </button>
+          </div>
         </div>
       </div>
 

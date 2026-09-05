@@ -111,11 +111,15 @@ CREATE TABLE public.quick_presets (
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 );
 
--- 6. Budget Config Table
+-- 6. Budget Config Table (Includes Earn-First Safe Spend & Display Preferences)
 CREATE TABLE public.budget_config (
     user_id TEXT PRIMARY KEY DEFAULT 'default',
     monthly_limit NUMERIC NOT NULL DEFAULT 25000,
     daily_allowance NUMERIC NOT NULL DEFAULT 600,
+    expected_daily_wage NUMERIC DEFAULT 200,
+    work_factor NUMERIC DEFAULT 0.70,
+    default_wallet TEXT DEFAULT 'Cash',
+    theme_preference TEXT DEFAULT 'light',
     currency TEXT NOT NULL DEFAULT 'INR',
     currency_symbol TEXT NOT NULL DEFAULT '₹'
 );
