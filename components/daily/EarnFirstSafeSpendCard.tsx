@@ -217,11 +217,11 @@ export default function EarnFirstSafeSpendCard({
         </div>
       )}
 
-      {/* 1-Tap Income Logging Presets & Custom Inflow */}
+      {/* 1-Tap Shift & Inflow Logging Presets */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-[10px] uppercase font-mono tracking-wider text-zinc-500 block">
-            Quick Income Loggers &amp; Day Off Toggle
+            1-Tap Shift Loggers &amp; Inflows
           </span>
           <button
             type="button"
@@ -229,7 +229,7 @@ export default function EarnFirstSafeSpendCard({
             className="flex items-center gap-1 text-[11px] font-semibold text-black hover:text-zinc-600 transition-colors"
           >
             <PlusCircle className="w-3 h-3 text-emerald-600" />
-            <span>+ Custom Income</span>
+            <span>+ Log Inflow</span>
           </button>
         </div>
 
@@ -244,30 +244,27 @@ export default function EarnFirstSafeSpendCard({
             <span>+₹{config.expectedDailyWage} Shift</span>
           </button>
 
-          {/* Gig / Freelance Quick Log */}
+          {/* Half Shift */}
           <button
             type="button"
             onClick={() => {
-              if (onLogIncome) {
-                onLogIncome(500, 'Freelance / Consulting', 'Freelance Gig', 'UPI / Bank');
-              } else {
-                onLogShift(500, 'Freelance Gig');
-              }
+              const halfWage = Math.max(50, Math.round(config.expectedDailyWage / 2));
+              onLogShift(halfWage, 'Half Shift Wage');
             }}
             className="flex items-center justify-center gap-1.5 py-2 px-2 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 transition-all active:scale-95"
           >
             <Briefcase className="w-3.5 h-3.5 text-zinc-600" />
-            <span>+₹500 Gig</span>
+            <span>+₹{Math.max(50, Math.round(config.expectedDailyWage / 2))} Half</span>
           </button>
 
-          {/* Other Inflow Modal Trigger */}
+          {/* Log Any Inflow (auto-logs as income) */}
           <button
             type="button"
             onClick={() => setIsIncomeModalOpen(true)}
             className="flex items-center justify-center gap-1.5 py-2 px-2 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 transition-all active:scale-95"
           >
             <Coins className="w-3.5 h-3.5 text-emerald-600" />
-            <span>+ Other Inflow</span>
+            <span>+ Log Inflow</span>
           </button>
 
           {/* Rest Day */}

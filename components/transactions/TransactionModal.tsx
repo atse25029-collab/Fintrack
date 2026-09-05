@@ -69,12 +69,20 @@ export default function TransactionModal({
     if (!parsedAmount || parsedAmount <= 0) return;
 
     const realTime = getExactRealTime();
+    const catLower = (category || '').toLowerCase();
+    const isExplicitInflow =
+      type === 'income' ||
+      catLower.includes('inflow') ||
+      catLower.includes('salary') ||
+      catLower.includes('wage');
+
+    const resolvedType: TransactionType = isExplicitInflow ? 'income' : type;
 
     onSave({
       ...(initialData?.id ? { id: initialData.id } : {}),
-      type,
+      type: resolvedType,
       amount: parsedAmount,
-      category: category || (type === 'expense' ? 'Miscellaneous' : 'Other Inflows'),
+      category: category || (resolvedType === 'expense' ? 'Miscellaneous' : 'Other Inflows'),
       description: description.trim() || category,
       date: date || realTime.date,
       time: time || realTime.time,

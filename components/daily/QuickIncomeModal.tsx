@@ -27,15 +27,6 @@ interface QuickIncomeModalProps {
   expectedWage?: number;
 }
 
-const INCOME_PRESETS = [
-  { label: 'Daily Shift', category: 'Daily Wage / Shift', desc: 'Daily Shift Wage', icon: Zap, defaultAmt: 200 },
-  { label: 'Freelance / Gig', category: 'Freelance / Consulting', desc: 'Freelance Project', icon: Laptop, defaultAmt: 500 },
-  { label: 'Salary / Bonus', category: 'Salary', desc: 'Salary / Advance', icon: Building, defaultAmt: 1000 },
-  { label: 'Gift / Cashback', category: 'Gifts & Cashback', desc: 'Cashback Reward', icon: Gift, defaultAmt: 50 },
-  { label: 'Tab Settled', category: 'Tab Settlement / Repayment', desc: 'Friend Repaid Tab', icon: HandCoins, defaultAmt: 150 },
-  { label: 'Side Hustle', category: 'Side Hustle / Gig', desc: 'Item Sold / Gig', icon: ShoppingBag, defaultAmt: 300 },
-];
-
 export default function QuickIncomeModal({
   isOpen,
   onClose,
@@ -43,6 +34,18 @@ export default function QuickIncomeModal({
   defaultWallet = 'Cash',
   expectedWage = 200,
 }: QuickIncomeModalProps) {
+  const halfWage = Math.max(50, Math.round(expectedWage / 2));
+  const otWage = Math.round(expectedWage * 1.75);
+
+  const INCOME_PRESETS = [
+    { label: 'Full Shift', category: 'Daily Wage / Shift', desc: 'Daily Shift Wage', icon: Zap, defaultAmt: expectedWage },
+    { label: 'Half Shift', category: 'Daily Wage / Shift', desc: 'Half Shift Wage', icon: Zap, defaultAmt: halfWage },
+    { label: 'Overtime / Extra', category: 'Daily Wage / Shift', desc: 'Overtime Shift Wage', icon: Sparkles, defaultAmt: otWage },
+    { label: 'Cash Inflow', category: 'Other Inflows', desc: 'General Cash Inflow', icon: Building, defaultAmt: 100 },
+    { label: 'Cashback / Gift', category: 'Gifts & Cashback', desc: 'Cashback Reward', icon: Gift, defaultAmt: 50 },
+    { label: 'Tab Settled', category: 'Tab Settlement / Repayment', desc: 'Friend Repaid Tab', icon: HandCoins, defaultAmt: 100 },
+  ];
+
   const [selectedPreset, setSelectedPreset] = useState(INCOME_PRESETS[0]);
   const [amount, setAmount] = useState(expectedWage.toString());
   const [description, setDescription] = useState(INCOME_PRESETS[0].desc);
@@ -88,9 +91,9 @@ export default function QuickIncomeModal({
               <PlusCircle className="w-4 h-4 text-emerald-400" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-zinc-950">Log Income Stream</h3>
+              <h3 className="text-sm font-bold text-zinc-950">Log Inflow (Auto-Logs as Income)</h3>
               <p className="text-[11px] text-zinc-500">
-                Instantly expands today&apos;s Earn-First safe spend
+                Automatically saved as income &amp; expands today&apos;s safe spend
               </p>
             </div>
           </div>
@@ -213,6 +216,12 @@ export default function QuickIncomeModal({
             </div>
           </div>
 
+          {/* Auto-income confirmation notice */}
+          <div className="p-2 bg-zinc-50 rounded-xl border border-zinc-200 text-[10px] text-zinc-500 flex items-center gap-1.5">
+            <span className="font-bold text-emerald-600">✓</span>
+            <span>Automatically recorded as an <strong>Income</strong> transaction &amp; deposited to your wallet.</span>
+          </div>
+
           {/* Actions */}
           <div className="flex gap-2 pt-2 border-t border-zinc-100">
             <button
@@ -226,7 +235,7 @@ export default function QuickIncomeModal({
               type="submit"
               className="flex-1 py-2.5 px-3 bg-black hover:bg-zinc-800 text-white font-semibold rounded-xl shadow-xs transition-colors"
             >
-              Add to Safe Spend
+              Log Inflow as Income
             </button>
           </div>
         </form>

@@ -147,9 +147,14 @@ export function computeEarnFirstState(
   const now = new Date();
   const today = customDate || getLocalDateString(now);
 
-// 1. Inspect Today's Transactions for ALL types of income
+// 1. Inspect Today's Transactions for ALL types of income (including any tagged inflow)
   const todayTransactions = transactions.filter((tx) => tx.date === today);
-  const todayIncomeTransactions = todayTransactions.filter((tx) => tx.type === 'income');
+  const todayIncomeTransactions = todayTransactions.filter(
+    (tx) =>
+      tx.type === 'income' ||
+      tx.category.toLowerCase().includes('inflow') ||
+      tx.description.toLowerCase().includes('inflow')
+  );
 
   const totalIncomeToday = todayIncomeTransactions.reduce((sum, tx) => sum + tx.amount, 0);
   const incomeLoggedToday = totalIncomeToday > 0;
@@ -164,7 +169,7 @@ export function computeEarnFirstState(
     time: tx.time,
   }));
 
-  // Itemize breakdown between daily shift/wage vs other incomes (freelance, gig, bonus, cashback, tab repayment)
+  // Itemize breakdown between daily shift/wage vs other inflows (cash in, cashback, tab repayment)
   let shiftWageToday = 0;
   let otherIncomeToday = 0;
 
@@ -190,9 +195,15 @@ export function computeEarnFirstState(
   const shiftLoggedToday = incomeLoggedToday;
   const wageEarnedToday = totalIncomeToday;
 
-  // 2. Inspect Today's Non-Due Expenses
+  // 2. Inspect Today's Non-Due Expenses (exclude any inflow)
   const spentToday = todayTransactions
-    .filter((tx) => tx.type === 'expense' && !tx.isMonthlyDue)
+    .filter(
+      (tx) =>
+        tx.type === 'expense' &&
+        !tx.isMonthlyDue &&
+        !tx.category.toLowerCase().includes('inflow') &&
+        !tx.description.toLowerCase().includes('inflow')
+    )
     .reduce((sum, tx) => sum + tx.amount, 0);
 
   // 3. Due Date Urgency & Shield Calculation (applies to total income)
@@ -228,9 +239,18 @@ export function computeEarnFirstState(
       pastDaysMap.set(tx.date, { income: 0, expense: 0 });
     }
     const dayData = pastDaysMap.get(tx.date)!;
-    if (tx.type === 'income') {
+    if (
+      tx.type === 'income' ||
+      tx.category.toLowerCase().includes('inflow') ||
+      tx.description.toLowerCase().includes('inflow')
+    ) {
       dayData.income += tx.amount;
-    } else if (tx.type === 'expense' && !tx.isMonthlyDue) {
+    } else if (
+      tx.type === 'expense' &&
+      !tx.isMonthlyDue &&
+      !tx.category.toLowerCase().includes('inflow') &&
+      !tx.description.toLowerCase().includes('inflow')
+    ) {
       dayData.expense += tx.amount;
     }
   }

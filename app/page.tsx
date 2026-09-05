@@ -330,17 +330,40 @@ export default function HomePage() {
               );
               // Apply new impact
               const newAmount = typeof data.amount === 'number' ? data.amount : existing.amount;
-              const newType = data.type || existing.type;
+              const catLower = (data.category || existing.category || '').toLowerCase();
+              const descLower = (data.description || existing.description || '').toLowerCase();
+              const isExplicitInflow =
+                data.type === 'income' ||
+                catLower.includes('inflow') ||
+                catLower.includes('salary') ||
+                catLower.includes('wage') ||
+                descLower.includes('inflow') ||
+                descLower.includes('shift wage');
+
+              const newType: TransactionType = isExplicitInflow ? 'income' : (data.type || existing.type);
               const newMethod = data.paymentMethod || existing.paymentMethod;
               return applyWalletImpact(reverted, newAmount, newType, newMethod, 'apply');
             });
           }
+
+          const catLower = (data.category || '').toLowerCase();
+          const descLower = (data.description || '').toLowerCase();
+          const isExplicitInflow =
+            data.type === 'income' ||
+            catLower.includes('inflow') ||
+            catLower.includes('salary') ||
+            catLower.includes('wage') ||
+            descLower.includes('inflow') ||
+            descLower.includes('shift wage');
+
+          const resolvedType: TransactionType = isExplicitInflow ? 'income' : (data.type || 'expense');
 
           updated = prev.map((t) =>
             t.id === data.id
               ? ({
                   ...t,
                   ...data,
+                  type: resolvedType,
                   amount: typeof data.amount === 'number' ? data.amount : t.amount,
                   createdAt: t.createdAt || now,
                   synced: false,
@@ -348,13 +371,25 @@ export default function HomePage() {
               : t
           );
         } else {
-          // Adding new transaction
+          // Adding new transaction (with guaranteed inflow auto-detection)
+          const catLower = (data.category || '').toLowerCase();
+          const descLower = (data.description || '').toLowerCase();
+          const isExplicitInflow =
+            data.type === 'income' ||
+            catLower.includes('inflow') ||
+            catLower.includes('salary') ||
+            catLower.includes('wage') ||
+            descLower.includes('inflow') ||
+            descLower.includes('shift wage');
+
+          const resolvedType: TransactionType = isExplicitInflow ? 'income' : (data.type || 'expense');
+
           const newTx: Transaction = {
             id: `tx-${now}-${Math.random().toString(36).substring(2, 7)}`,
-            type: data.type || 'expense',
+            type: resolvedType,
             amount: data.amount || 0,
-            category: data.category || 'Chai & Snacks',
-            description: data.description || '',
+            category: data.category || (resolvedType === 'income' ? 'Other Inflows' : 'Chai & Snacks'),
+            description: data.description || (resolvedType === 'income' ? 'Inflow' : ''),
             date: data.date || realTime.date,
             time: data.time || realTime.time,
             timestamp: data.timestamp || realTime.timestamp,
