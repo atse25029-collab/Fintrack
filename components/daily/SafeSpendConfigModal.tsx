@@ -171,6 +171,14 @@ export default function SafeSpendConfigModal({
             </p>
           </div>
 
+          {/* Multi-Income Support Note */}
+          <div className="p-2.5 bg-zinc-50 rounded-xl border border-zinc-200/80 text-[11px] text-zinc-600 flex items-start gap-2">
+            <span className="text-sm shrink-0">💡</span>
+            <p>
+              <strong>All Income Types Supported:</strong> Daily shift wages, freelance projects, bonuses, gifts, cashbacks, and tab repayments automatically expand today&apos;s safe pocket spend!
+            </p>
+          </div>
+
           <div className="pt-2 flex items-center justify-end gap-2 border-t border-zinc-100">
             <button
               type="button"

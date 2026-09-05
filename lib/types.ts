@@ -148,11 +148,14 @@ export const DEFAULT_CATEGORIES = {
     'Miscellaneous',
   ],
   income: [
+    'Daily Wage / Shift',
     'Salary',
     'Freelance / Consulting',
     'Business / Sales',
     'Investments & Interest',
     'Gifts & Cashback',
+    'Tab Settlement / Repayment',
+    'Side Hustle / Gig',
     'Other Inflows',
   ],
 };
@@ -193,7 +196,19 @@ export interface QuickPreset {
     | 'tag'
     | 'wallet'
     | 'trending-up';
-}// Earn-First Safe Spend Engine Configuration & Live State
+}
+
+// Itemized Income for Earn-First Engine
+export interface EarnFirstIncomeItem {
+  id: string;
+  description: string;
+  amount: number;
+  category: string;
+  paymentMethod: PaymentMethod;
+  time?: string;
+}
+
+// Earn-First Safe Spend Engine Configuration & Live State
 export interface EarnFirstConfig {
   expectedDailyWage: number;       // default 200
   workFactor: number;              // default 0.70 (e.g. 5 days a week)
@@ -203,8 +218,14 @@ export interface EarnFirstConfig {
 
 export interface EarnFirstState {
   date: string;
-  shiftLoggedToday: boolean;
-  wageEarnedToday: number;
+  shiftLoggedToday: boolean;        // Backward-compat: true if any income was logged today
+  incomeLoggedToday: boolean;       // True if any income was logged today
+  wageEarnedToday: number;          // Backward-compat: total income earned today
+  totalIncomeToday: number;         // Total income from all sources earned today
+  incomeCountToday: number;         // Count of income transactions today
+  incomeItemsToday: EarnFirstIncomeItem[]; // Itemized list of all incomes earned today
+  shiftWageToday: number;           // Subtotal of shift / wage earnings
+  otherIncomeToday: number;         // Subtotal of freelance, gig, gift, tab settlement, etc.
   basePocketAllowance: number;
   carriedRollover: number;         // surplus (+) or deficit (-) from previous days
   totalAllowanceToday: number;     // base + carriedRollover

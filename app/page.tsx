@@ -418,13 +418,37 @@ export default function HomePage() {
       handleSaveTransaction({
         description,
         amount,
-        category: 'Salary / Daily Wage',
+        category: 'Daily Wage / Shift',
         type: 'income',
         paymentMethod: earnFirstConfig.defaultWallet,
         date: realTime.date,
         time: realTime.time,
         timestamp: realTime.timestamp,
         notes: 'Logged via Earn-First Shift Preset',
+      });
+      setEarnFirstTick((prev) => prev + 1);
+    },
+    [earnFirstConfig.defaultWallet, handleSaveTransaction]
+  );
+
+  const handleLogIncome = useCallback(
+    (
+      amount: number,
+      category: string,
+      description: string,
+      wallet?: 'Cash' | 'UPI / Bank'
+    ) => {
+      const realTime = getExactRealTime();
+      handleSaveTransaction({
+        description,
+        amount,
+        category: category || 'Other Inflows',
+        type: 'income',
+        paymentMethod: wallet || earnFirstConfig.defaultWallet,
+        date: realTime.date,
+        time: realTime.time,
+        timestamp: realTime.timestamp,
+        notes: `Logged via Earn-First Income (${category})`,
       });
       setEarnFirstTick((prev) => prev + 1);
     },
@@ -956,6 +980,7 @@ export default function HomePage() {
                 setEarnFirstConfigState(saved);
               }}
               onLogShift={handleLogShift}
+              onLogIncome={handleLogIncome}
               onToggleRestDay={handleToggleRestDayAction}
             />
 

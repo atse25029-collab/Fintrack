@@ -1,4 +1,10 @@
-import { Transaction, MonthlyDue, EarnFirstConfig, EarnFirstState } from '@/lib/types';
+import {
+  Transaction,
+  MonthlyDue,
+  EarnFirstConfig,
+  EarnFirstState,
+  EarnFirstIncomeItem,
+} from '@/lib/types';
 import { getLocalDateString } from '@/lib/utils';
 
 export const DEFAULT_EARN_FIRST_CONFIG: EarnFirstConfig = {
@@ -141,42 +147,67 @@ export function computeEarnFirstState(
   const now = new Date();
   const today = customDate || getLocalDateString(now);
 
-  // 1. Inspect Today's Transactions for Shift Wage
+// 1. Inspect Today's Transactions for ALL types of income
   const todayTransactions = transactions.filter((tx) => tx.date === today);
+  const todayIncomeTransactions = todayTransactions.filter((tx) => tx.type === 'income');
 
-  const wageTx = todayTransactions.find(
-    (tx) =>
-      tx.type === 'income' &&
-      (tx.description.toLowerCase().includes('wage') ||
-        tx.description.toLowerCase().includes('salary') ||
-        tx.description.toLowerCase().includes('shift') ||
-        tx.description.toLowerCase().includes('part time') ||
-        tx.description.toLowerCase().includes('daily') ||
-        tx.category.toLowerCase().includes('salary') ||
-        tx.amount === config.expectedDailyWage)
-  );
+  const totalIncomeToday = todayIncomeTransactions.reduce((sum, tx) => sum + tx.amount, 0);
+  const incomeLoggedToday = totalIncomeToday > 0;
+  const incomeCountToday = todayIncomeTransactions.length;
 
-  const shiftLoggedToday = Boolean(wageTx);
-  const wageEarnedToday = wageTx ? wageTx.amount : 0;
+  const incomeItemsToday: EarnFirstIncomeItem[] = todayIncomeTransactions.map((tx) => ({
+    id: tx.id,
+    description: tx.description,
+    amount: tx.amount,
+    category: tx.category,
+    paymentMethod: tx.paymentMethod,
+    time: tx.time,
+  }));
+
+  // Itemize breakdown between daily shift/wage vs other incomes (freelance, gig, bonus, cashback, tab repayment)
+  let shiftWageToday = 0;
+  let otherIncomeToday = 0;
+
+  for (const tx of todayIncomeTransactions) {
+    const desc = tx.description.toLowerCase();
+    const cat = tx.category.toLowerCase();
+    if (
+      desc.includes('wage') ||
+      desc.includes('shift') ||
+      desc.includes('part time') ||
+      desc.includes('daily') ||
+      cat.includes('shift') ||
+      cat.includes('daily wage') ||
+      tx.amount === config.expectedDailyWage
+    ) {
+      shiftWageToday += tx.amount;
+    } else {
+      otherIncomeToday += tx.amount;
+    }
+  }
+
+  // Backward-compatibility aliases
+  const shiftLoggedToday = incomeLoggedToday;
+  const wageEarnedToday = totalIncomeToday;
 
   // 2. Inspect Today's Non-Due Expenses
   const spentToday = todayTransactions
     .filter((tx) => tx.type === 'expense' && !tx.isMonthlyDue)
     .reduce((sum, tx) => sum + tx.amount, 0);
 
-  // 3. Due Date Urgency & Shield Calculation
+  // 3. Due Date Urgency & Shield Calculation (applies to total income)
   const urgency = calculateDueUrgency(dues, now, config.workFactor);
   let duesShieldToday = 0;
 
-  if (shiftLoggedToday && wageEarnedToday > 0) {
+  if (totalIncomeToday > 0) {
     const maxReserveCap = Math.round(
-      wageEarnedToday * ((config.duesReserveCapPercent || 40) / 100)
+      totalIncomeToday * ((config.duesReserveCapPercent || 40) / 100)
     );
     duesShieldToday = Math.min(urgency.totalDailyCut, maxReserveCap);
   }
 
-  const basePocketAllowance = shiftLoggedToday
-    ? Math.max(0, wageEarnedToday - duesShieldToday)
+  const basePocketAllowance = totalIncomeToday > 0
+    ? Math.max(0, totalIncomeToday - duesShieldToday)
     : 0;
 
   // 4. Derive Historical Rollover and Cushion from Past 7 Days
@@ -273,7 +304,13 @@ export function computeEarnFirstState(
   return {
     date: today,
     shiftLoggedToday,
+    incomeLoggedToday,
     wageEarnedToday,
+    totalIncomeToday,
+    incomeCountToday,
+    incomeItemsToday,
+    shiftWageToday,
+    otherIncomeToday,
     basePocketAllowance,
     carriedRollover,
     totalAllowanceToday,
