@@ -38,7 +38,18 @@ import {
   ExternalLink,
   Smartphone,
   HardDrive,
+  Bell,
+  BellRing,
 } from 'lucide-react';
+import {
+  isNotificationSupported,
+  getNotificationPermission,
+  requestNotificationPermission,
+  getNotificationPreferences,
+  setNotificationPreferences,
+  sendTestNotification,
+  NotificationPreferences,
+} from '@/lib/notifications/notificationService';
 
 interface ProfileSectionProps {
   transactions: Transaction[];
@@ -76,6 +87,57 @@ export default function ProfileSection({
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
+
+  // Phone Notifications State
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>({
+    enabled: true,
+    notifyDues: true,
+    notifyTabs: true,
+    frequencyHours: 5,
+  });
+  const [testingNotif, setTestingNotif] = useState(false);
+  const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNotifPermission(getNotificationPermission());
+    setNotifPrefs(getNotificationPreferences());
+  }, []);
+
+  const handleRequestPermission = async () => {
+    const granted = await requestNotificationPermission();
+    setNotifPermission(getNotificationPermission());
+    if (granted) {
+      setNotifFeedback('Notifications enabled successfully!');
+    } else {
+      setNotifFeedback('Permission was not granted.');
+    }
+    setTimeout(() => setNotifFeedback(null), 4000);
+  };
+
+  const handleTogglePref = (key: keyof NotificationPreferences, value: boolean) => {
+    const updated = setNotificationPreferences({ [key]: value });
+    setNotifPrefs(updated);
+  };
+
+  const handleSendTest = async () => {
+    setTestingNotif(true);
+    setNotifFeedback(null);
+    try {
+      const success = await sendTestNotification();
+      setNotifPermission(getNotificationPermission());
+      if (success) {
+        setNotifFeedback('Test alert dispatched! Check your phone notification tray.');
+      } else {
+        setNotifFeedback('Unable to send alert. Check notification permissions in browser settings.');
+      }
+    } catch (err: any) {
+      setNotifFeedback(`Failed: ${err.message || 'Error triggering alert'}`);
+    } finally {
+      setTestingNotif(false);
+      setTimeout(() => setNotifFeedback(null), 5000);
+    }
+  };
 
   useEffect(() => {
     if (isSupabaseConfigured) {
@@ -403,6 +465,157 @@ export default function ProfileSection({
                 )}
               </button>
             </form>
+          </div>
+        )}
+      </div>
+
+      {/* Phone Notifications & Alerts Card */}
+      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-zinc-100 rounded-xl text-black">
+              <BellRing className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs sm:text-sm font-bold text-zinc-950">Phone Notifications &amp; Alerts</h3>
+              <p className="text-[10px] sm:text-xs text-zinc-500">
+                Native device alerts for upcoming dues &amp; unsettled tabs (2–3 / day)
+              </p>
+            </div>
+          </div>
+
+          <span
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold border ${
+              notifPermission === 'granted'
+                ? 'bg-zinc-900 text-white border-zinc-800'
+                : notifPermission === 'denied'
+                ? 'bg-red-50 text-red-700 border-red-200'
+                : 'bg-zinc-100 text-zinc-700 border-zinc-300'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                notifPermission === 'granted'
+                  ? 'bg-emerald-400 animate-pulse'
+                  : notifPermission === 'denied'
+                  ? 'bg-red-500'
+                  : 'bg-amber-400'
+              }`}
+            />
+            <span>
+              {notifPermission === 'granted'
+                ? 'Active'
+                : notifPermission === 'denied'
+                ? 'Blocked'
+                : notifPermission === 'unsupported'
+                ? 'Unsupported'
+                : 'Action Needed'}
+            </span>
+          </span>
+        </div>
+
+        {notifFeedback && (
+          <div className="p-2.5 bg-zinc-100 rounded-xl border border-zinc-200 text-xs text-zinc-900 flex items-center gap-2 animate-in fade-in">
+            <CheckCircle2 className="w-3.5 h-3.5 text-black shrink-0" />
+            <span>{notifFeedback}</span>
+          </div>
+        )}
+
+        {notifPermission === 'denied' && (
+          <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-700 space-y-1">
+            <p className="font-semibold">Notifications are blocked on this device</p>
+            <p className="text-[11px] text-red-600">
+              To enable alerts, tap the site settings / lock icon in your browser address bar and set Notifications to &quot;Allow&quot;.
+            </p>
+          </div>
+        )}
+
+        {notifPermission === 'default' && (
+          <div className="p-3 bg-zinc-50 rounded-xl border border-dashed border-zinc-300 space-y-2">
+            <p className="text-xs font-semibold text-zinc-900">
+              Never miss a monthly due or pending debt
+            </p>
+            <p className="text-[11px] text-zinc-500">
+              Allow notifications to receive quiet, timely alerts on this phone when a payment is due today, tomorrow, or overdue.
+            </p>
+            <button
+              type="button"
+              onClick={handleRequestPermission}
+              className="w-full sm:w-auto px-4 py-2 bg-black hover:bg-zinc-800 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm"
+            >
+              <Bell className="w-3.5 h-3.5" />
+              <span>Enable Phone Alerts</span>
+            </button>
+          </div>
+        )}
+
+        {/* Preferences & Test Controls (when supported and permitted) */}
+        {notifPermission === 'granted' && (
+          <div className="space-y-3 pt-1">
+            <div className="space-y-2">
+              <label className="flex items-center justify-between p-2.5 bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-200 cursor-pointer transition-colors">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold text-zinc-900 block">Master Notification Switch</span>
+                  <span className="text-[10px] text-zinc-500 block">
+                    Receive native notifications on this phone
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={notifPrefs.enabled}
+                  onChange={(e) => handleTogglePref('enabled', e.target.checked)}
+                  className="w-4 h-4 rounded border-zinc-300 text-black focus:ring-black accent-black cursor-pointer"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-2.5 bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-200 cursor-pointer transition-colors">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold text-zinc-900 block">Monthly Dues &amp; Bills</span>
+                  <span className="text-[10px] text-zinc-500 block">
+                    Alerts 2 days before, 1 day before, day of due date, and overdue
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  disabled={!notifPrefs.enabled}
+                  checked={notifPrefs.notifyDues}
+                  onChange={(e) => handleTogglePref('notifyDues', e.target.checked)}
+                  className="w-4 h-4 rounded border-zinc-300 text-black focus:ring-black accent-black cursor-pointer disabled:opacity-40"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-2.5 bg-zinc-50 hover:bg-zinc-100 rounded-xl border border-zinc-200 cursor-pointer transition-colors">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold text-zinc-900 block">Pending Tabs &amp; Splits</span>
+                  <span className="text-[10px] text-zinc-500 block">
+                    Reminders for unsettled debts or receivables older than 2 days
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  disabled={!notifPrefs.enabled}
+                  checked={notifPrefs.notifyTabs}
+                  onChange={(e) => handleTogglePref('notifyTabs', e.target.checked)}
+                  className="w-4 h-4 rounded border-zinc-300 text-black focus:ring-black accent-black cursor-pointer disabled:opacity-40"
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-2 border-t border-zinc-100">
+              <span className="text-[10px] text-zinc-500 font-mono">
+                Cooldown: ~5 hours (max 2–3 alerts/day)
+              </span>
+
+              <button
+                type="button"
+                onClick={handleSendTest}
+                disabled={testingNotif}
+                className="flex items-center justify-center gap-2 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 text-xs font-semibold rounded-xl border border-zinc-300 transition-all active:scale-95 disabled:opacity-50"
+              >
+                <Smartphone className="w-3.5 h-3.5 text-black" />
+                <span>{testingNotif ? 'Sending Alert...' : 'Send Test Notification'}</span>
+              </button>
+            </div>
           </div>
         )}
       </div>

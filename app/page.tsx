@@ -23,6 +23,7 @@ import MonthlyDuesManager from '@/components/dues/MonthlyDuesManager';
 import MonthlyDueModal from '@/components/dues/MonthlyDueModal';
 import AnalyticsView from '@/components/analytics/AnalyticsView';
 import ProfileSection from '@/components/profile/ProfileSection';
+import { checkAndNotifyUpcomingDuesAndTabs } from '@/lib/notifications/notificationService';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import {
   fetchAllCloudData,
@@ -187,6 +188,42 @@ export default function HomePage() {
       window.removeEventListener('fintrack_presets_changed', handleStorageChange);
     };
   }, []);
+
+  // Handle Notification Deep-Linking & Service Worker Navigation Messages
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    // 1. Deep-link from fresh window launch (e.g., /?section=dues or /?section=tabs)
+    const params = new URLSearchParams(window.location.search);
+    const sectionParam = params.get('section');
+    if (
+      sectionParam &&
+      ['daily', 'dashboard', 'tabs', 'dues', 'analytics', 'profile'].includes(sectionParam)
+    ) {
+      setCurrentSection(sectionParam as AppSection);
+    }
+
+    // 2. Service Worker Message (e.g. user tapped notification with app already open)
+    if ('serviceWorker' in navigator) {
+      const handleSwMessage = (event: MessageEvent) => {
+        if (event.data && event.data.type === 'NAVIGATE_SECTION' && event.data.section) {
+          setCurrentSection(event.data.section as AppSection);
+        }
+      };
+
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+      return () => {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      };
+    }
+  }, []);
+
+  // Background Dues & Tabs Phone Notification Scanner
+  useEffect(() => {
+    if (dues.length > 0 || tabs.length > 0) {
+      checkAndNotifyUpcomingDuesAndTabs(dues, tabs);
+    }
+  }, [dues, tabs]);
 
   // --- Automatic Wallet Adjustments on Transaction Events ---
   const applyWalletImpact = useCallback(

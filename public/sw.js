@@ -133,3 +133,44 @@ self.addEventListener('sync', (event) => {
     );
   }
 });
+
+// Notification Click Event: Focuses or opens FinTrack to target section (dues or tabs)
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetSection = (event.notification.data && event.notification.data.section) || 'dues';
+  const urlToOpen = new URL(`/?section=${targetSection}`, self.location.origin).href;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if ('focus' in client) {
+          client.postMessage({ type: 'NAVIGATE_SECTION', section: targetSection });
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(urlToOpen);
+      }
+    })
+  );
+});
+
+// Push Event: Handles incoming Web Push notifications
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+  try {
+    const data = event.data.json();
+    const title = data.title || 'FinTrack Alert';
+    const options = {
+      body: data.body || 'You have an upcoming financial alert.',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      vibrate: [200, 100, 200],
+      data: data.data || { section: 'dues' },
+      tag: data.tag || 'fintrack-alert',
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+  } catch (err) {
+    console.error('Push notification parse error:', err);
+  }
+});
