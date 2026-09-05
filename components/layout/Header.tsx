@@ -56,7 +56,7 @@ export default function Header({
   }, []);
 
   const sections: { id: AppSection; label: string; icon: any; alert?: number }[] = [
-    { id: 'daily', label: 'Daily Finance', icon: LayoutDashboard },
+    { id: 'daily', label: 'Home Overview', icon: LayoutDashboard },
     { id: 'tabs', label: 'Tabs (Lent & Borrowed)', icon: Users },
     { id: 'dues', label: 'Monthly Dues', icon: Calendar, alert: dueAlertCount },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },

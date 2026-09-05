@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server';
-import { WalletBalances } from '@/lib/types';
+import { getStoredWallets, saveWallets } from '@/lib/storage/vercelStorage';
 import { DEFAULT_WALLETS } from '@/lib/sampleData';
-
-// Memory fallback for Vercel Serverless
-let inMemoryWallets: WalletBalances = { ...DEFAULT_WALLETS };
 
 export async function GET() {
   try {
-    return NextResponse.json({ success: true, data: inMemoryWallets });
+    const wallets = await getStoredWallets();
+    return NextResponse.json({ success: true, data: wallets });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: 'Failed to fetch wallets' },
@@ -21,17 +19,19 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     if (body.action === 'reset') {
-      inMemoryWallets = { ...DEFAULT_WALLETS, lastUpdated: Date.now() };
-      return NextResponse.json({ success: true, data: inMemoryWallets });
+      const resetWallets = { ...DEFAULT_WALLETS, lastUpdated: Date.now() };
+      await saveWallets(resetWallets);
+      return NextResponse.json({ success: true, data: resetWallets });
     }
 
     if (typeof body.cashInHand === 'number' && typeof body.accountBalance === 'number') {
-      inMemoryWallets = {
+      const updated = {
         cashInHand: body.cashInHand,
         accountBalance: body.accountBalance,
         lastUpdated: Date.now(),
       };
-      return NextResponse.json({ success: true, data: inMemoryWallets });
+      await saveWallets(updated);
+      return NextResponse.json({ success: true, data: updated });
     }
 
     return NextResponse.json(

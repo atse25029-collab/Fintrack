@@ -17,7 +17,7 @@ export default function BottomNav({
   const navItems = [
     {
       id: 'daily' as AppSection,
-      label: 'Daily',
+      label: 'Home',
       icon: LayoutDashboard,
     },
     {

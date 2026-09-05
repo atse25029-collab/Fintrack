@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
-import { QuickPreset } from '@/lib/types';
+import { getStoredPresets, savePresets } from '@/lib/storage/vercelStorage';
 import { DEFAULT_QUICK_PRESETS } from '@/lib/sampleData';
-
-let inMemoryPresets: QuickPreset[] = [...DEFAULT_QUICK_PRESETS];
 
 export async function GET() {
   try {
-    return NextResponse.json({ success: true, data: inMemoryPresets });
+    const presets = await getStoredPresets();
+    return NextResponse.json({ success: true, data: presets });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: 'Failed to fetch presets' },
@@ -18,30 +17,34 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const presets = await getStoredPresets();
 
     if (body.action === 'reset') {
-      inMemoryPresets = [...DEFAULT_QUICK_PRESETS];
-      return NextResponse.json({ success: true, data: inMemoryPresets });
+      await savePresets(DEFAULT_QUICK_PRESETS);
+      return NextResponse.json({ success: true, data: DEFAULT_QUICK_PRESETS });
     }
 
     if (body.action === 'delete' && body.id) {
-      inMemoryPresets = inMemoryPresets.filter((p) => p.id !== body.id);
-      return NextResponse.json({ success: true, data: inMemoryPresets });
+      const filtered = presets.filter((p) => p.id !== body.id);
+      await savePresets(filtered);
+      return NextResponse.json({ success: true, data: filtered });
     }
 
     if (Array.isArray(body)) {
-      inMemoryPresets = body;
-      return NextResponse.json({ success: true, data: inMemoryPresets });
+      await savePresets(body);
+      return NextResponse.json({ success: true, data: body });
     }
 
     if (body.id && body.label && typeof body.amount === 'number') {
-      const existingIdx = inMemoryPresets.findIndex((p) => p.id === body.id);
+      const existingIdx = presets.findIndex((p) => p.id === body.id);
+      let updated = [...presets];
       if (existingIdx >= 0) {
-        inMemoryPresets[existingIdx] = body;
+        updated[existingIdx] = body;
       } else {
-        inMemoryPresets.push(body);
+        updated.push(body);
       }
-      return NextResponse.json({ success: true, data: inMemoryPresets });
+      await savePresets(updated);
+      return NextResponse.json({ success: true, data: updated });
     }
 
     return NextResponse.json(

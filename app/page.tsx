@@ -5,7 +5,6 @@ import Header, { AppSection } from '@/components/layout/Header';
 import BottomNav from '@/components/layout/BottomNav';
 import WalletOverview from '@/components/wallets/WalletOverview';
 import WalletAdjustModal from '@/components/wallets/WalletAdjustModal';
-import DailyOverview from '@/components/daily/DailyOverview';
 import QuickAddBar from '@/components/daily/QuickAddBar';
 import QuickPresetModal from '@/components/daily/QuickPresetModal';
 import DailyTimeline from '@/components/daily/DailyTimeline';
@@ -790,7 +789,7 @@ export default function HomePage() {
 
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-6xl mx-auto px-3.5 sm:px-6 lg:px-8 py-3.5 sm:py-6 pb-28 md:pb-8 space-y-4 sm:space-y-6">
-        {/* VIEW 1: DAILY FINANCE & DASHBOARD */}
+        {/* VIEW 1: HOME DASHBOARD */}
         {currentSection === 'daily' && (
           <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-150 w-full max-w-full overflow-hidden">
             {/* Top Liquid Funds & Wallet Balances */}
@@ -799,14 +798,8 @@ export default function HomePage() {
               onOpenAdjustModal={() => setIsWalletModalOpen(true)}
             />
 
-            {/* Daily Focus Section */}
+            {/* Today's Activity Stream & Quick 1-Tap Actions (Directly After Liquid Funds) */}
             <section className="space-y-3.5 sm:space-y-4">
-              <DailyOverview
-                summary={dailySummary}
-                budget={budget}
-                onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
-              />
-
               <QuickAddBar
                 presets={presets}
                 onOpenPresetManager={() => setIsPresetModalOpen(true)}

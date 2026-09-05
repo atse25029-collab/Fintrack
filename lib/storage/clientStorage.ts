@@ -212,7 +212,7 @@ export async function syncWithVercelServer(
     });
     if (txRes.ok) {
       const txData = await txRes.json();
-      if (txData.data && Array.isArray(txData.data)) {
+      if (txData.data && Array.isArray(txData.data) && txData.data.length > 0) {
         setLocalTransactions(txData.data);
         fallback.transactions = txData.data;
       }
@@ -222,7 +222,7 @@ export async function syncWithVercelServer(
     const tabsRes = await fetch('/api/tabs');
     if (tabsRes.ok) {
       const tabsData = await tabsRes.json();
-      if (tabsData.data && Array.isArray(tabsData.data)) {
+      if (tabsData.data && Array.isArray(tabsData.data) && tabsData.data.length > 0) {
         setLocalTabs(tabsData.data);
         fallback.tabs = tabsData.data;
       }
@@ -232,7 +232,7 @@ export async function syncWithVercelServer(
     const duesRes = await fetch('/api/dues');
     if (duesRes.ok) {
       const duesData = await duesRes.json();
-      if (duesData.data && Array.isArray(duesData.data)) {
+      if (duesData.data && Array.isArray(duesData.data) && duesData.data.length > 0) {
         setLocalDues(duesData.data);
         fallback.dues = duesData.data;
       }
