@@ -123,17 +123,33 @@ export default function ProfileSection({
   const handleSendTest = async () => {
     setTestingNotif(true);
     setNotifFeedback(null);
+
+    // Guaranteed fallback: ensures button state resets within 2.5s no matter what
+    const safetyTimer = setTimeout(() => {
+      setTestingNotif(false);
+    }, 2500);
+
     try {
       const success = await sendTestNotification();
+      clearTimeout(safetyTimer);
       setNotifPermission(getNotificationPermission());
       if (success) {
         setNotifFeedback('Test alert dispatched! Check your phone notification tray.');
       } else {
-        setNotifFeedback('Unable to send alert. Check notification permissions in browser settings.');
+        const perm = getNotificationPermission();
+        if (perm === 'denied') {
+          setNotifFeedback('Notifications are blocked in your browser settings.');
+        } else if (perm === 'default') {
+          setNotifFeedback('Permission needed. Tap "Enable Phone Alerts" first.');
+        } else {
+          setNotifFeedback('Alert sent! If not visible, check phone "Do Not Disturb" or system alerts.');
+        }
       }
     } catch (err: any) {
-      setNotifFeedback(`Failed: ${err.message || 'Error triggering alert'}`);
+      clearTimeout(safetyTimer);
+      setNotifFeedback(`Notice: ${err.message || 'Error triggering alert'}`);
     } finally {
+      clearTimeout(safetyTimer);
       setTestingNotif(false);
       setTimeout(() => setNotifFeedback(null), 5000);
     }

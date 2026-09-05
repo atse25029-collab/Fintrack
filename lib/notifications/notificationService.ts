@@ -33,9 +33,20 @@ export function getNotificationPermission(): NotificationPermission | 'unsupport
 
 export async function requestNotificationPermission(): Promise<boolean> {
   if (!isNotificationSupported()) return false;
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission === 'denied') return false;
+
   try {
-    const permission = await Notification.requestPermission();
-    return permission === 'granted';
+    const result = Notification.requestPermission();
+    let perm: NotificationPermission;
+    if (result && typeof (result as any).then === 'function') {
+      perm = await result;
+    } else {
+      perm = await new Promise<NotificationPermission>((resolve) => {
+        Notification.requestPermission(resolve);
+      });
+    }
+    return perm === 'granted';
   } catch (err) {
     console.error('Error requesting notification permission:', err);
     return false;
@@ -107,6 +118,39 @@ function shouldNotify(key: string, cooldownHours: number = 5): boolean {
 }
 
 // ==========================================
+// Safe Service Worker Registration Helper
+// ==========================================
+
+async function getSwRegistration(timeoutMs = 1200): Promise<ServiceWorkerRegistration | null> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null;
+
+  try {
+    // 1. Check if already active/registered
+    const existing = await navigator.serviceWorker.getRegistration();
+    if (existing) {
+      return existing;
+    }
+  } catch {}
+
+  try {
+    // 2. Proactively trigger registration if missing
+    const registered = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    if (registered) {
+      return registered;
+    }
+  } catch {}
+
+  // 3. Race navigator.serviceWorker.ready against a fast timeout
+  try {
+    const readyPromise = navigator.serviceWorker.ready;
+    const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
+    return await Promise.race([readyPromise, timeoutPromise]);
+  } catch {
+    return null;
+  }
+}
+
+// ==========================================
 // Native Notification Dispatcher
 // ==========================================
 
@@ -125,20 +169,18 @@ export async function sendNativeNotification(
     ...options,
   };
 
-  // 1. Try via Service Worker Registration (Required on mobile / Android Chrome)
-  if ('serviceWorker' in navigator) {
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      if (reg && 'showNotification' in reg) {
-        await reg.showNotification(title, defaultOptions);
-        return true;
-      }
-    } catch (err) {
-      console.warn('ServiceWorker showNotification failed, trying fallback:', err);
+  // 1. Try Service Worker Registration (Required on mobile / Android Chrome)
+  try {
+    const reg = await getSwRegistration(1200);
+    if (reg && typeof reg.showNotification === 'function') {
+      await reg.showNotification(title, defaultOptions);
+      return true;
     }
+  } catch (err) {
+    console.warn('ServiceWorker showNotification failed, trying fallback:', err);
   }
 
-  // 2. Direct Window Notification Fallback
+  // 2. Direct Window Notification Fallback (Desktop / browsers supporting new Notification)
   try {
     const notif = new Notification(title, defaultOptions);
     notif.onclick = () => {
@@ -147,7 +189,7 @@ export async function sendNativeNotification(
     };
     return true;
   } catch (err) {
-    console.error('Failed to trigger window Notification:', err);
+    console.warn('Window Notification fallback failed:', err);
     return false;
   }
 }
@@ -157,14 +199,28 @@ export async function sendNativeNotification(
 // ==========================================
 
 export async function sendTestNotification(): Promise<boolean> {
-  const granted = await requestNotificationPermission();
-  if (!granted) return false;
+  if (!isNotificationSupported()) return false;
 
-  return await sendNativeNotification('🎉 FinTrack Notifications Active!', {
-    body: 'You will receive alerts on this device 2–3 times a day when a monthly due or tab is near.',
-    tag: 'test-notification',
-    section: 'dues',
-  });
+  const currentPerm = Notification.permission;
+  if (currentPerm !== 'granted') {
+    const granted = await requestNotificationPermission();
+    if (!granted) return false;
+  }
+
+  // Enforce a hard timeout so UI never hangs
+  try {
+    const dispatchPromise = sendNativeNotification('🎉 FinTrack Notifications Active!', {
+      body: 'You will receive alerts on this device 2–3 times a day when a monthly due or tab is near.',
+      tag: 'test-notification',
+      section: 'dues',
+    });
+
+    const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2500));
+    return await Promise.race([dispatchPromise, timeoutPromise]);
+  } catch (err) {
+    console.error('sendTestNotification error:', err);
+    return false;
+  }
 }
 
 // ==========================================
