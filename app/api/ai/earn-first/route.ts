@@ -71,21 +71,26 @@ export async function POST(req: NextRequest) {
     const systemPrompt = `You are FinTrack Copilot — the user's street-smart, witty, empathetic, and encouraging personal money partner.
 You are NOT a cold, sterile accountant or a calculator script. You NEVER output robotic form letters (like "- Item Cost: ₹X, - Safe Left: ₹Y"). You talk in natural, conversational sentences like a trusted, financially savvy friend who knows their exact money situation and wants them to thrive.
 
-CURRENT LIVE FINANCIAL REALITY FOR TODAY (${context.date}, ${context.dayOfWeek || 'This Week'}):
+CURRENT LIVE FINANCIAL REALITY FOR TODAY (${context.date}, ${context.dayOfWeek || 'Today'}):
+* WEEK CYCLE RULE: The budget week STRICTLY runs from MONDAY to SUNDAY (${context.weekCycleLabel || 'Monday to Sunday'}).
+* Current day: ${context.dayOfWeek} (${context.daysRemainingInWeek === 1 ? 'Sunday / Final day of week cycle' : `${context.daysRemainingInWeek} days left until Sunday`}).
+* Dues landing strictly this week (before Sunday): ${context.duesDueThisWeekCount} dues totaling ₹${context.duesDueThisWeekTotal}.
+
 1. REAL LIQUID CASH IN HAND & BANK:
    - Cash in Hand: ₹${context.wallets.cashInHand}
    - Bank / UPI Balance: ₹${context.wallets.accountBalance}
    - Total Liquid Money Right Now: ₹${context.totalLiquidFunds}
 
-2. WORK SCHEDULE & ESTIMATED EARNINGS THIS WEEK:
+2. WORK SCHEDULE & ESTIMATED EARNINGS THIS MONDAY–SUNDAY WEEK:
    - Standard Wage Rate Per Shift: ₹${context.workSchedule.expectedWagePerShift}
-   - Planned Work Shifts This Week: ${context.workSchedule.plannedWorkShiftsThisWeek} shifts
+   - Planned Work Shifts This Week: ${context.workSchedule.plannedWorkShiftsThisWeek} shifts (Total potential: ₹${context.workSchedule.plannedWorkShiftsThisWeek * context.workSchedule.expectedWagePerShift})
    - Shifts Already Completed Since Monday: ${context.workSchedule.shiftsCompletedThisWeek} shifts (Earned so far: ₹${context.workSchedule.earnedThisWeek})
    - Remaining Planned Shifts To Work: ${context.workSchedule.shiftsRemainingThisWeek} shifts
    - Estimated Remaining Work Earnings Yet To Be Earned: ₹${context.workSchedule.remainingExpectedIncome}
 
 3. LOCKED OBLIGATIONS (RING-FENCED SO USER NEVER SHORTFALLS BILLS OR FRIENDS):
    - Total Locked Obligations: ₹${context.obligations.totalLocked}
+   - Dues Landing This Week (Mon–Sun): ${context.duesDueThisWeekCount} dues (₹${context.duesDueThisWeekTotal})
    - All Pending Dues (${context.obligations.pendingDuesCount} dues, ₹${context.obligations.pendingDuesTotal}):
 ${duesListStr}
    - Friend Tabs You Owe:
@@ -95,7 +100,7 @@ ${owedToYouStr}
 
 4. WEEKLY DISCRETIONARY POOL & TODAY'S SAFE LIMIT:
    - Net Weekly Safe Pool: ₹${context.netWeeklySafePool} (Calculated as Liquid ₹${context.totalLiquidFunds} + Est. Work Income ₹${context.workSchedule.remainingExpectedIncome} - Locked Obligations ₹${context.obligations.totalLocked})
-   - Days Remaining in Current Week: ${context.daysRemainingInWeek} days (including today)
+   - Days Remaining in Current Monday–Sunday Week: ${context.daysRemainingInWeek} days (including today)
    - Today's Target Allowance: ₹${context.dailyTargetToday}
    - Already Spent Today: ₹${context.spentToday}
    - Safe Left To Spend Today: ₹${Math.max(0, context.remainingSafeToday)} ${
@@ -104,16 +109,19 @@ ${owedToYouStr}
 
 CONVERSATIONAL RULES & PERSONALITY GUIDELINES:
 1. TALK LIKE A HUMAN: Use natural, punchy, conversational prose with warmth and relatable humor. Avoid repeating standard bulleted tables.
-2. AFFORDABILITY QUESTIONS ("Can I buy ₹X?", "Can I afford dinner tonight?"):
+2. WEEK CYCLE AWARENESS: The week ALWAYS starts on Monday and ends on Sunday. If asked about the week or today, always frame it within this Monday-to-Sunday horizon.
+3. DUES THIS WEEK: If asked "how many dues do I have left this week", specifically state the ${context.duesDueThisWeekCount} dues landing before Sunday, while assuring them that ALL dues are ring-fenced.
+4. ESTIMATED EARNINGS THIS WEEK: If asked how much they will earn this week, clearly explain the planned shifts (${context.workSchedule.plannedWorkShiftsThisWeek} shifts @ ₹${context.workSchedule.expectedWagePerShift} = ₹${context.workSchedule.plannedWorkShiftsThisWeek * context.workSchedule.expectedWagePerShift}), how many are completed (${context.workSchedule.shiftsCompletedThisWeek} shifts, ₹${context.workSchedule.earnedThisWeek}), and remaining to earn (₹${context.workSchedule.remainingExpectedIncome}).
+5. AFFORDABILITY QUESTIONS ("Can I buy ₹X?", "Can I afford dinner tonight?"):
    - Directly analyze the purchase in context of their current liquid cash, their locked bills/debts, and remaining work shifts.
    - If affordable: Celebrate and give the green light with confidence (*"Go for it! You've got ₹${context.remainingSafeToday} safe to spend today..."*).
    - If unaffordable or risky: Give a friendly, candid reality-check without being preachy. Tell them exactly which bills or friend debts would be at risk, and remind them that working their next planned shift (+₹${context.workSchedule.expectedWagePerShift}) will unlock the purchase cleanly.
-3. REST-DAY & DAY-OFF QUESTIONS ("Can I take tomorrow off?"):
+6. REST-DAY & DAY-OFF QUESTIONS ("Can I take tomorrow off?"):
    - Look at their shift progress (${context.workSchedule.shiftsCompletedThisWeek} of ${context.workSchedule.plannedWorkShiftsThisWeek} shifts done).
    - Calculate how dropping a shift impacts the weekly pool and explain it encouragingly.
-4. OBLIGATIONS & DEBT DIAGNOSTICS:
+7. OBLIGATIONS & DEBT DIAGNOSTICS:
    - If asked about dues or tabs, cite the specific names, amounts, and dates from the list above.
-5. KEEP IT SNAPPY: 2-4 short, lively paragraphs. Use emojis thoughtfully. Always format currency in Indian Rupees (₹).`;
+8. KEEP IT SNAPPY: 2-4 short, lively paragraphs. Use emojis thoughtfully. Always format currency in Indian Rupees (₹).`;
 
     // Format previous messages for Gemini API
     const contents = [];
@@ -233,13 +241,34 @@ function generateHumanFallbackReply(
     }
   }
 
-  // 3. Dues & Debt breakdown
+  // 3. Dues landing this week specifically
+  if (
+    (query.includes('due') || query.includes('bill')) &&
+    (query.includes('this week') || query.includes('left') || query.includes('how many'))
+  ) {
+    if (context.duesDueThisWeekCount > 0) {
+      return `You have **${context.duesDueThisWeekCount} monthly bill${context.duesDueThisWeekCount === 1 ? '' : 's'}** landing this week (before Sunday), totaling **₹${context.duesDueThisWeekTotal}** 🗓️.\n\nAll ${context.obligations.pendingDuesCount} upcoming dues (₹${context.obligations.pendingDuesTotal}) and friend debts (₹${context.obligations.pendingTabsTotal}) are already 100% ring-fenced from your ₹${liquid} liquid cash, so your bills will never bounce!`;
+    } else {
+      return `Good news! 🎉 You have **0 monthly bills landing this week** (before Sunday). Any other dues fall later in the month, and we've already ring-fenced all ₹${locked} of your upcoming dues and friend tabs from your ₹${liquid} liquid cash so you're totally safe!`;
+    }
+  }
+
+  // 4. Dues & Debt breakdown
   if (query.includes('due') || query.includes('tab') || query.includes('debt') || query.includes('lock')) {
     const dueCount = context.obligations.pendingDuesCount;
     const tabCount = context.obligations.pendingTabsCount;
     return `Here's your debt snapshot 🔒: We're ring-fencing a total of **₹${locked}** right now.\n\n- **Monthly Dues (${dueCount})**: Totaling ₹${context.obligations.pendingDuesTotal}\n- **Friend Tabs You Owe (${tabCount})**: Totaling ₹${context.obligations.pendingTabsTotal}\n\nThis money is completely sealed off from your liquid funds (₹${liquid}), so you never have to panic when due dates land!`;
   }
 
-  // 4. General week check-in
-  return `Hey! Here's how your week is shaping up 📊:\n\nYou've got **₹${liquid}** total in your accounts. After locking away **₹${locked}** for your bills and debts, plus factoring in your **${context.workSchedule.shiftsRemainingThisWeek} planned shifts** left this week (+₹${context.workSchedule.remainingExpectedIncome}), your weekly safe discretionary pool is **₹${context.netWeeklySafePool}**.\n\nThat gives you **₹${safeLeft}** safe to spend today! What are you planning to do?`;
+  // 5. Work & Estimated Earnings this week
+  if (query.includes('earn') || query.includes('income') || query.includes('wage') || query.includes('shift')) {
+    return `Here's your earnings breakdown for this Monday–Sunday week (${context.weekCycleLabel || 'this week'}) 💼:\n\n• **Weekly Plan:** ${context.workSchedule.plannedWorkShiftsThisWeek} shifts @ ₹${shiftWage} = **₹${context.workSchedule.plannedWorkShiftsThisWeek * shiftWage}**\n• **Earned Since Monday:** ₹${context.workSchedule.earnedThisWeek} (${context.workSchedule.shiftsCompletedThisWeek} shifts done)\n• **Remaining to Earn Before Sunday:** **₹${context.workSchedule.remainingExpectedIncome}** (${context.workSchedule.shiftsRemainingThisWeek} shifts left)\n\nEvery time you log a shift or inflow, it feeds directly into your liquid cash!`;
+  }
+
+  // 6. General Monday-to-Sunday week check-in
+  const cycleStatus = context.isSunday
+    ? 'Today is Sunday—the final day of this Monday–Sunday cycle!'
+    : `We're on ${context.dayOfWeek}, with ${context.daysRemainingInWeek} days left until this cycle wraps up on Sunday.`;
+
+  return `Hey! Here's how your **Monday–Sunday week** is shaping up 📊 (${cycleStatus}):\n\nYou've got **₹${liquid}** total in your accounts. After locking away **₹${locked}** for your bills and debts, plus factoring in your **${context.workSchedule.shiftsRemainingThisWeek} planned shifts** left this week (+₹${context.workSchedule.remainingExpectedIncome}), your weekly safe discretionary pool is **₹${context.netWeeklySafePool}**.\n\nThat gives you **₹${safeLeft}** safe to spend today! What are you planning to do?`;
 }

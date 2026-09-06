@@ -60,30 +60,27 @@ export default function EarnFirstChatModal({
   // Suggested prompt chips
   const SUGGESTED_CHIPS = [
     'Can I afford a ₹250 meal tonight?',
-    'How is my week shaping up?',
+    'How many dues do I have left this week?',
+    'How is my Monday–Sunday week shaping up?',
     'Break down my locked dues & debts',
     'Can I take tomorrow off?',
   ];
 
-  // Initialize greeting on first open
+  // Auto-generate warm initial greeting
   useEffect(() => {
     if (isOpen && messages.length === 0) {
-      const dayNames = [
-        'Sunday',
-        'Monday',
-        'Tuesday',
-        'Wednesday',
-        'Thursday',
-        'Friday',
-        'Saturday',
-      ];
-      const todayName = dayNames[new Date().getDay()];
+      const todayName = state.dayOfWeekName || 'Today';
       const safeLeft = Math.max(0, state.remainingSafeToday);
+
+      const duesThisWeekText =
+        state.duesDueThisWeekCount > 0
+          ? `${state.duesDueThisWeekCount} bills due before Sunday (${formatCurrency(state.duesDueThisWeekTotal)})`
+          : 'no monthly bills due before Sunday';
 
       const greeting: ChatMessage = {
         id: `msg-greet-${Date.now()}`,
         role: 'assistant',
-        content: `Hey! I'm your FinTrack Copilot 👋\n\nHappy ${todayName}! Here's your real-time situation:\n• **Safe to spend today:** ₹${safeLeft}\n• **Total Liquid Cash:** ₹${state.totalLiquidFunds} (Cash + Bank)\n• **Locked for bills & debts:** ₹${state.totalObligationsLocked} (${state.pendingDuesCount} dues, ${state.pendingTabsCount} tabs)\n• **Work progress:** ${state.shiftsCompletedThisWeek} of ${state.plannedWorkShiftsThisWeek} shifts completed\n\nWhat's on your mind? Ask me if you can afford something, how to pace your week, or if you can take time off!`,
+        content: `Hey! I'm your FinTrack Copilot 👋\n\nHappy ${todayName}! Our budget week runs **Monday to Sunday** (${state.weekCycleLabel}). Here's your live situation:\n• **Safe to spend today:** ${formatCurrency(safeLeft)} (${state.daysRemainingInWeek === 1 ? 'ends tonight (Sunday)' : `${state.daysRemainingInWeek} days left in cycle`})\n• **Total Liquid Cash:** ${formatCurrency(state.totalLiquidFunds)} (Cash + Bank)\n• **Locked for bills & debts:** ${formatCurrency(state.totalObligationsLocked)} (${duesThisWeekText})\n• **Work progress:** ${state.shiftsCompletedThisWeek} of ${state.plannedWorkShiftsThisWeek} shifts completed\n\nWhat's on your mind? Ask me if you can afford something, how many dues are left this week, or if you can take time off!`,
         timestamp: Date.now(),
       };
       setMessages([greeting]);
@@ -128,20 +125,14 @@ export default function EarnFirstChatModal({
     setIsLoading(true);
 
     try {
-      const dayNames = [
-        'Sunday',
-        'Monday',
-        'Tuesday',
-        'Wednesday',
-        'Thursday',
-        'Friday',
-        'Saturday',
-      ];
-      const dayOfWeekStr = dayNames[new Date().getDay()];
-
       const chatContext: WeeklySafeSpendChatContext = {
         date: state.date,
-        dayOfWeek: dayOfWeekStr,
+        dayOfWeek: state.dayOfWeekName || 'Today',
+        weekCycle: 'Monday to Sunday',
+        weekStartDate: state.weekStartDate,
+        weekEndDate: state.weekEndDate,
+        weekCycleLabel: state.weekCycleLabel,
+        isSunday: state.isSunday,
         remainingSafeToday: state.remainingSafeToday,
         dailyTargetToday: state.dailyTargetToday,
         spentToday: state.spentToday,
@@ -149,6 +140,8 @@ export default function EarnFirstChatModal({
         overspentAmount: state.overspentAmount,
         netWeeklySafePool: state.netWeeklySafePool,
         daysRemainingInWeek: state.daysRemainingInWeek,
+        duesDueThisWeekCount: state.duesDueThisWeekCount,
+        duesDueThisWeekTotal: state.duesDueThisWeekTotal,
         totalLiquidFunds: state.totalLiquidFunds,
         wallets: {
           cashInHand: wallets.cashInHand,
@@ -373,6 +366,10 @@ export default function EarnFirstChatModal({
               <strong className="text-zinc-900">
                 {state.shiftsCompletedThisWeek}/{state.plannedWorkShiftsThisWeek}
               </strong>
+            </span>
+            <span className="text-zinc-300">•</span>
+            <span className="px-1.5 py-0.5 bg-zinc-200 text-zinc-800 rounded font-bold text-[10px] shrink-0">
+              Mon–Sun Week ({state.daysRemainingInWeek === 1 ? 'Sunday / Ends tonight' : `${state.daysRemainingInWeek}d left`})
             </span>
           </div>
         </div>

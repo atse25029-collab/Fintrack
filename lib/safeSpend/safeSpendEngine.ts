@@ -88,25 +88,51 @@ export function computeWeeklySafeSpendState(
 ): WeeklySafeSpendState {
   const todayStr = getLocalDateString(currentDate);
 
-  // 1. Determine Current Week Span (Monday to Sunday)
-  // getDay(): 0 is Sunday, 1 is Monday ... 6 is Saturday
+  // 1. Determine Current Week Span (Strictly Monday to Sunday)
+  // JavaScript getDay(): 0 is Sunday, 1 is Monday ... 6 is Saturday
   const rawDay = currentDate.getDay();
-  const dayOfWeek = rawDay === 0 ? 7 : rawDay; // Mon=1, Sun=7
-  const daysRemainingInWeek = Math.max(1, 8 - dayOfWeek); // Mon=7 days left, Sun=1 day left
+  // Map to 1 = Monday, 2 = Tuesday, 3 = Wednesday, 4 = Thursday, 5 = Friday, 6 = Saturday, 7 = Sunday
+  const dayOfWeekIndex = rawDay === 0 ? 7 : rawDay;
+  const daysRemainingInWeek = Math.max(1, 8 - dayOfWeekIndex); // Mon=7 days, Tue=6, Wed=5, Thu=4, Fri=3, Sat=2, Sun=1
 
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayOfWeekName = dayNames[rawDay];
+  const isSunday = dayOfWeekIndex === 7;
+  const isMonday = dayOfWeekIndex === 1;
+
+  // Monday (Week Start)
   const mondayDate = new Date(currentDate);
-  mondayDate.setDate(currentDate.getDate() - (dayOfWeek - 1));
+  mondayDate.setDate(currentDate.getDate() - (dayOfWeekIndex - 1));
   const mondayStr = getLocalDateString(mondayDate);
+
+  // Sunday (Week End)
+  const sundayDate = new Date(mondayDate);
+  sundayDate.setDate(mondayDate.getDate() + 6);
+  const sundayStr = getLocalDateString(sundayDate);
+
+  // Formatted Monday – Sunday cycle label (e.g. "Mon, 31 Aug – Sun, 6 Sep")
+  const mondayShort = mondayDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const sundayShort = sundayDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const weekCycleLabel = `Mon, ${mondayShort} – Sun, ${sundayShort}`;
+
+  // Build calendar map of this Monday-to-Sunday week's days of month
+  const weekDayMap = new Map<number, string>();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(mondayDate);
+    d.setDate(mondayDate.getDate() + i);
+    const label = `${d.toLocaleDateString('en-IN', { weekday: 'short' })}, ${d.getDate()} ${d.toLocaleDateString('en-IN', { month: 'short' })}`;
+    weekDayMap.set(d.getDate(), label);
+  }
 
   // 2. Liquid Funds (Real money in hand + bank)
   const cashInHand = Math.max(0, wallets?.cashInHand ?? 0);
   const accountBalance = Math.max(0, wallets?.accountBalance ?? 0);
   const totalLiquidFunds = Math.round((cashInHand + accountBalance) * 100) / 100;
 
-  // 3. Work & Earnings This Week
-  // Filter all income transactions logged from Monday of this week through today
+  // 3. Work & Earnings This Week (Monday to Sunday)
+  // Filter all income transactions logged within the current Monday–Sunday cycle
   const weeklyIncomes = transactions.filter(
-    (tx) => tx.type === 'income' && tx.date >= mondayStr && tx.date <= todayStr
+    (tx) => tx.type === 'income' && tx.date >= mondayStr && tx.date <= sundayStr
   );
 
   const earnedThisWeek = weeklyIncomes.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
@@ -141,18 +167,19 @@ export function computeWeeklySafeSpendState(
   const remainingExpectedIncome =
     remainingWorkIncome + Math.max(0, config.additionalWeeklyIncome || 0);
 
-  // 4. All Remaining Dues (Not just the next one)
-  // Find all unpaid dues due within the horizon (e.g. next 7 days / this week)
+  // 4. All Remaining Dues (Protected against liquid funds)
   const currentDayOfMonth = currentDate.getDate();
   const horizonDays = config.duesHorizonDays || 7;
 
   const pendingDuesList = dues
     .filter((due) => due.status !== 'paid')
     .filter((due) => {
-      // Calculate days remaining until due day
+      // Check if due lands strictly in this Monday-to-Sunday week
+      if (weekDayMap.has(due.dueDayOfMonth)) return true;
+
+      // Or lands within horizon days from current day
       let diff = due.dueDayOfMonth - currentDayOfMonth;
       if (diff < 0) {
-        // Already passed this month -> overdue or upcoming next month
         diff += 30;
       }
       return diff <= horizonDays;
@@ -163,10 +190,16 @@ export function computeWeeklySafeSpendState(
       amount: Number(due.amount) || 0,
       dueDayOfMonth: due.dueDayOfMonth,
       category: due.category || 'Bills & Utilities',
+      isDueThisWeek: weekDayMap.has(due.dueDayOfMonth),
+      dueDateFormatted: weekDayMap.get(due.dueDayOfMonth) || `Day ${due.dueDayOfMonth}`,
     }));
 
   const pendingDuesTotal = pendingDuesList.reduce((sum, d) => sum + d.amount, 0);
   const pendingDuesCount = pendingDuesList.length;
+
+  const duesDueThisWeekList = pendingDuesList.filter((d) => d.isDueThisWeek);
+  const duesDueThisWeekCount = duesDueThisWeekList.length;
+  const duesDueThisWeekTotal = duesDueThisWeekList.reduce((sum, d) => sum + d.amount, 0);
 
   // 5. All Remaining Tabs (Ring-fence what you owe)
   const pendingYouOweTabs = tabs.filter(
@@ -260,15 +293,24 @@ export function computeWeeklySafeSpendState(
     pendingTabsTotal,
     pendingTabsList,
     netWeeklySafePool,
+    weekStartDate: mondayStr,
+    weekEndDate: sundayStr,
+    weekCycleLabel,
+    dayOfWeekName,
+    dayOfWeekIndex,
+    isSunday,
+    isMonday,
     daysRemainingInWeek,
+    duesDueThisWeekCount,
+    duesDueThisWeekTotal,
     dailyTargetToday,
     spentToday,
     remainingSafeToday,
+    safeLeftToday: Math.max(0, remainingSafeToday),
     isOverspentToday,
     overspentAmount,
     percentUsedToday,
     // Legacy compatibility fields
-    safeLeftToday: Math.max(0, remainingSafeToday),
     remainingToday: Math.max(0, remainingSafeToday),
     totalAllowanceToday: dailyTargetToday,
     totalIncomeToday: earnedThisWeek,

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Transaction } from '@/lib/types';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, getLocalDateString } from '@/lib/utils';
 import { ArrowDownLeft, ArrowUpRight, Trash2, Edit2, Calendar } from 'lucide-react';
 
 interface DailyTimelineProps {
@@ -18,7 +18,7 @@ export default function DailyTimeline({
   onEdit,
   onLogFirst,
 }: DailyTimelineProps) {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDateString(new Date());
   const todayTxs = transactions.filter((t) => t.date === todayStr);
 
   return (

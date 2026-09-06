@@ -239,12 +239,29 @@ export interface WeeklySafeSpendState {
   totalObligationsLocked: number;     // total pending dues + you_owe tabs
   pendingDuesCount: number;
   pendingDuesTotal: number;
-  pendingDuesList: Array<{ id: string; title: string; amount: number; dueDayOfMonth: number; category: string }>;
+  pendingDuesList: Array<{
+    id: string;
+    title: string;
+    amount: number;
+    dueDayOfMonth: number;
+    category: string;
+    isDueThisWeek?: boolean;
+    dueDateFormatted?: string;
+  }>;
   pendingTabsCount: number;
   pendingTabsTotal: number;
   pendingTabsList: Array<{ id: string; personName: string; amount: number; description: string; type: TabType }>;
   netWeeklySafePool: number;          // liquid + remainingExpected - obligations
-  daysRemainingInWeek: number;        // 1 to 7
+  weekStartDate: string;              // Monday YYYY-MM-DD
+  weekEndDate: string;                // Sunday YYYY-MM-DD
+  weekCycleLabel: string;             // e.g. "Mon, 31 Aug – Sun, 6 Sep"
+  dayOfWeekName: string;              // "Monday", "Tuesday", ..., "Sunday"
+  dayOfWeekIndex: number;             // 1 (Monday) to 7 (Sunday)
+  isSunday: boolean;                  // true if today is Sunday (final day of week cycle)
+  isMonday: boolean;                  // true if today is Monday (first day of week cycle)
+  daysRemainingInWeek: number;        // 1 to 7 (Mon=7, Sun=1)
+  duesDueThisWeekCount: number;       // count of dues due between Monday and Sunday
+  duesDueThisWeekTotal: number;       // sum of dues due between Monday and Sunday
   dailyTargetToday: number;           // netWeeklySafePool / daysRemaining
   spentToday: number;
   remainingSafeToday: number;         // dailyTargetToday - spentToday
@@ -281,6 +298,11 @@ export interface ChatMessage {
 export interface WeeklySafeSpendChatContext {
   date: string;
   dayOfWeek: string;
+  weekCycle: string;                  // "Monday to Sunday"
+  weekStartDate: string;              // Monday YYYY-MM-DD
+  weekEndDate: string;                // Sunday YYYY-MM-DD
+  weekCycleLabel: string;             // e.g. "Mon, 31 Aug – Sun, 6 Sep"
+  isSunday: boolean;                  // true if today is Sunday
   remainingSafeToday: number;
   dailyTargetToday: number;
   spentToday: number;
@@ -288,6 +310,8 @@ export interface WeeklySafeSpendChatContext {
   overspentAmount: number;
   netWeeklySafePool: number;
   daysRemainingInWeek: number;
+  duesDueThisWeekCount: number;
+  duesDueThisWeekTotal: number;
   totalLiquidFunds: number;
   wallets: {
     cashInHand: number;

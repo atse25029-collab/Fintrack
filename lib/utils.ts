@@ -214,20 +214,24 @@ export function calculateDailySummary(transactions: Transaction[], budget: Budge
       ? 100
       : 0;
 
-  // 4. Weekly Metrics (Monday to Today)
+  // 4. Weekly Metrics (Strict Monday to Sunday cycle)
   const now = new Date();
-  const dayOfWeek = now.getDay();
-  const distanceToMonday = (dayOfWeek + 6) % 7;
+  const rawDay = now.getDay();
+  const dayOfWeekIndex = rawDay === 0 ? 7 : rawDay; // Mon=1, Sun=7
   const monday = new Date(now);
-  monday.setDate(now.getDate() - distanceToMonday);
+  monday.setDate(now.getDate() - (dayOfWeekIndex - 1));
   monday.setHours(0, 0, 0, 0);
-  const mondayStr = monday.toISOString().split('T')[0];
+  const mondayStr = getLocalDateString(monday);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const sundayStr = getLocalDateString(sunday);
 
   const thisWeekTxs = transactions.filter(
-    (t) => isDailyExpense(t) && t.date >= mondayStr && t.date <= today
+    (t) => isDailyExpense(t) && t.date >= mondayStr && t.date <= sundayStr
   );
   const weeklySpent = thisWeekTxs.reduce((sum, t) => sum + t.amount, 0);
-  const daysInWeekSoFar = distanceToMonday + 1;
+  const daysInWeekSoFar = dayOfWeekIndex; // 1 on Monday through 7 on Sunday
   const weeklyTarget = daysInWeekSoFar * baseAllowance;
   const weeklyVariance = weeklyTarget - weeklySpent;
 
@@ -388,20 +392,27 @@ export function calculateDailyAnalytics(transactions: Transaction[], days = 14):
   return { points, average, maxDay, maxAmount };
 }
 
-// Analytics: Weekly Breakdown (last 6 calendar weeks)
+// Analytics: Weekly Breakdown (last 6 Monday-to-Sunday calendar weeks)
 export function calculateWeeklyAnalytics(transactions: Transaction[], weeks = 6): { points: TimeframeSpendingPoint[]; average: number } {
   const points: TimeframeSpendingPoint[] = [];
   let totalExpense = 0;
 
-  for (let w = weeks - 1; w >= 0; w--) {
-    const end = new Date();
-    end.setDate(end.getDate() - w * 7);
-    const start = new Date(end);
-    start.setDate(start.getDate() - 6);
+  const now = new Date();
+  const rawDay = now.getDay();
+  const dayOfWeekIndex = rawDay === 0 ? 7 : rawDay;
+  const thisMonday = new Date(now);
+  thisMonday.setDate(now.getDate() - (dayOfWeekIndex - 1));
+  thisMonday.setHours(0, 0, 0, 0);
 
-    const startStr = start.toISOString().split('T')[0];
-    const endStr = end.toISOString().split('T')[0];
-    const label = w === 0 ? 'This Week' : `W-${w}`;
+  for (let w = weeks - 1; w >= 0; w--) {
+    const start = new Date(thisMonday);
+    start.setDate(thisMonday.getDate() - w * 7);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+
+    const startStr = getLocalDateString(start);
+    const endStr = getLocalDateString(end);
+    const label = w === 0 ? 'This Week (Mon–Sun)' : `W-${w}`;
 
     const weekTxs = transactions.filter((t) => t.date >= startStr && t.date <= endStr);
     const expense = weekTxs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
@@ -410,7 +421,7 @@ export function calculateWeeklyAnalytics(transactions: Transaction[], weeks = 6)
     totalExpense += expense;
     points.push({
       label,
-      period: `${start.getDate()} ${start.toLocaleDateString('en-IN', { month: 'short' })} - ${end.getDate()} ${end.toLocaleDateString('en-IN', { month: 'short' })}`,
+      period: `${start.getDate()} ${start.toLocaleDateString('en-IN', { month: 'short' })} (Mon) - ${end.getDate()} ${end.toLocaleDateString('en-IN', { month: 'short' })} (Sun)`,
       expense,
       income,
       net: income - expense,

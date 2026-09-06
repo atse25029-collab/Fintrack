@@ -71,15 +71,25 @@ export default function WeeklySafeSpendCard({
               <h3 className="text-xs sm:text-sm font-bold text-zinc-950">
                 Weekly Safe to Spend
               </h3>
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-black text-white">
+                Mon – Sun Week
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-zinc-100 text-zinc-800 border border-zinc-200" title={state.weekCycleLabel}>
+                {state.weekCycleLabel}
+              </span>
               <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-zinc-100 text-zinc-800 border border-zinc-200">
                 {state.shiftsCompletedThisWeek} of {state.plannedWorkShiftsThisWeek} shifts done
               </span>
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-zinc-50 text-zinc-600 border border-zinc-200">
-                {state.daysRemainingInWeek} {state.daysRemainingInWeek === 1 ? 'day left' : 'days left'}
+              <span className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold border ${
+                state.isSunday
+                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : 'bg-zinc-50 text-zinc-600 border-zinc-200'
+              }`}>
+                {state.dayOfWeekName || 'Today'} &bull; {state.daysRemainingInWeek === 1 ? 'Ends tonight (Sunday)' : `${state.daysRemainingInWeek} days left`}
               </span>
             </div>
             <p className="text-[10px] sm:text-xs text-zinc-500 mt-0.5">
-              Anchored to real bank balances &bull; All dues and tabs ring-fenced
+              Cycle: Monday to Sunday &bull; All dues and tabs ring-fenced
             </p>
           </div>
         </div>
@@ -234,7 +244,7 @@ export default function WeeklySafeSpendCard({
             {formatCurrency(state.netWeeklySafePool)}
           </div>
           <div className="text-[10px] text-zinc-400 truncate">
-            Spread across {state.daysRemainingInWeek} days
+            Spread across {state.daysRemainingInWeek}d (to Sunday)
           </div>
         </div>
       </div>
@@ -254,8 +264,29 @@ export default function WeeklySafeSpendCard({
 
           <p className="text-[11px] text-zinc-500 leading-relaxed">
             Every unpaid due and friend tab is 100% ring-fenced from your liquid funds so you never
-            risk missing rent, bills, or debt repayments.
+            risk missing rent, bills, or debt repayments during this Monday–Sunday cycle.
           </p>
+
+          {/* Dues due strictly this week banner */}
+          {state.duesDueThisWeekCount > 0 ? (
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-[11px]">
+              <span className="font-semibold text-amber-900 flex items-center gap-1">
+                <span>🗓️ Dues Landing This Week (before Sunday):</span>
+              </span>
+              <span className="font-mono font-bold text-amber-900">
+                {state.duesDueThisWeekCount} dues ({formatCurrency(state.duesDueThisWeekTotal)})
+              </span>
+            </div>
+          ) : (
+            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-[11px]">
+              <span className="font-semibold text-emerald-900 flex items-center gap-1">
+                <span>✅ No monthly bills landing this week (before Sunday)</span>
+              </span>
+              <span className="text-[10px] text-emerald-700 font-mono">
+                Clear through Sunday
+              </span>
+            </div>
+          )}
 
           <div className="space-y-2">
             {/* Monthly Dues List */}
@@ -263,7 +294,7 @@ export default function WeeklySafeSpendCard({
               <div className="space-y-1">
                 <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold flex items-center gap-1">
                   <Calendar className="w-3 h-3 text-zinc-600" />
-                  <span>Unpaid Monthly Dues ({state.pendingDuesList.length})</span>
+                  <span>Protected Dues ({state.pendingDuesList.length})</span>
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                   {state.pendingDuesList.map((d) => (
@@ -273,8 +304,14 @@ export default function WeeklySafeSpendCard({
                     >
                       <div className="truncate pr-2">
                         <span className="font-semibold text-zinc-900 block truncate">{d.title}</span>
-                        <span className="text-[9px] text-zinc-400 font-mono">
-                          Due day {d.dueDayOfMonth} &bull; {d.category}
+                        <span className="text-[9px] text-zinc-500 font-mono flex items-center gap-1 flex-wrap">
+                          <span>{d.dueDateFormatted}</span>
+                          {d.isDueThisWeek && (
+                            <span className="px-1 py-0.2 bg-amber-100 text-amber-900 rounded font-bold">
+                              This Week
+                            </span>
+                          )}
+                          <span>&bull; {d.category}</span>
                         </span>
                       </div>
                       <span className="font-mono font-bold text-red-600 shrink-0">
