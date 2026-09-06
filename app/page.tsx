@@ -23,14 +23,14 @@ import MonthlyDuesManager from '@/components/dues/MonthlyDuesManager';
 import MonthlyDueModal from '@/components/dues/MonthlyDueModal';
 import AnalyticsView from '@/components/analytics/AnalyticsView';
 import ProfileSection from '@/components/profile/ProfileSection';
-import WeeklySafeSpendCard from '@/components/daily/WeeklySafeSpendCard';
+import DynamicSafeSpendCard from '@/components/daily/DynamicSafeSpendCard';
 import PasteSmsModal from '@/components/daily/PasteSmsModal';
 import ReceiptScanModal from '@/components/daily/ReceiptScanModal';
 import MonthlyStatementModal from '@/components/analytics/MonthlyStatementModal';
 import {
-  getWeeklySafeSpendConfig,
-  setWeeklySafeSpendConfig,
-  computeWeeklySafeSpendState,
+  getSafeSpendConfig,
+  setSafeSpendConfig,
+  computeDynamicSafeSpendState,
 } from '@/lib/safeSpend/safeSpendEngine';
 import { getStoredTheme, applyTheme } from '@/lib/theme/themeService';
 import { ParsedSmsTransaction } from '@/lib/parser/smsParser';
@@ -67,9 +67,12 @@ import {
   TransactionType,
   WalletBalances,
   QuickPreset,
+  DynamicSafeSpendConfig,
+  DynamicSafeSpendState,
   WeeklySafeSpendConfig,
   WeeklySafeSpendState,
 } from '@/lib/types';
+
 import {
   INITIAL_TRANSACTIONS,
   DEFAULT_BUDGET,
@@ -131,27 +134,27 @@ export default function HomePage() {
   const [isDueModalOpen, setIsDueModalOpen] = useState(false);
   const [editingDue, setEditingDue] = useState<MonthlyDue | null>(null);
 
-  // Weekly Safe Spend & New Feature Modals State
-  const [safeSpendConfig, setSafeSpendConfigState] = useState<WeeklySafeSpendConfig>(getWeeklySafeSpendConfig());
+  // Dynamic Runway Safe Spend & New Feature Modals State
+  const [safeSpendConfig, setSafeSpendConfigState] = useState<DynamicSafeSpendConfig>(getSafeSpendConfig());
   const [safeSpendTick, setSafeSpendTick] = useState(0);
   const [isPasteSmsOpen, setIsPasteSmsOpen] = useState(false);
   const [isReceiptScanOpen, setIsReceiptScanOpen] = useState(false);
   const [isStatementOpen, setIsStatementOpen] = useState(false);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
 
-  // Compute live Weekly Safe Spend State from wallets, dues, tabs, transactions, and config
+  // Compute live Dynamic Runway Safe Spend State from wallets, dues, tabs, transactions, and config
   const safeSpendState = useMemo(() => {
-    return computeWeeklySafeSpendState(wallets, dues, tabs, transactions, safeSpendConfig);
+    return computeDynamicSafeSpendState(wallets, dues, tabs, transactions, safeSpendConfig);
   }, [wallets, dues, tabs, transactions, safeSpendConfig, safeSpendTick]);
 
   // Initial load from storage and background sync
   useEffect(() => {
     // 0. Initialize theme & Safe Spend configuration
     applyTheme(getStoredTheme());
-    setSafeSpendConfigState(getWeeklySafeSpendConfig());
+    setSafeSpendConfigState(getSafeSpendConfig());
 
     const handleSafeSpendChanged = () => {
-      setSafeSpendConfigState(getWeeklySafeSpendConfig());
+      setSafeSpendConfigState(getSafeSpendConfig());
       setSafeSpendTick((prev) => prev + 1);
     };
     window.addEventListener('fintrack_safespend_changed', handleSafeSpendChanged);
@@ -1163,12 +1166,12 @@ export default function HomePage() {
               onOpenAdjustModal={() => setIsWalletModalOpen(true)}
             />
 
-            {/* Weekly Safe to Spend Engine (Liquid Cash + Shift Income - Protected Dues & Tabs) */}
-            <WeeklySafeSpendCard
+            {/* Dynamic Runway Safe to Spend Engine (Liquid Cash + Shift Income - Protected Dues & Tabs) */}
+            <DynamicSafeSpendCard
               state={safeSpendState}
               config={safeSpendConfig}
               onUpdateConfig={(newConfig) => {
-                const saved = setWeeklySafeSpendConfig(newConfig);
+                const saved = setSafeSpendConfig(newConfig);
                 setSafeSpendConfigState(saved);
               }}
               onLogShift={handleLogShift}
@@ -1176,6 +1179,7 @@ export default function HomePage() {
               dues={dues}
               onOpenCopilot={() => setIsChatModalOpen(true)}
             />
+
 
             {/* Today's Activity Stream & Quick 1-Tap Actions (Directly After Liquid Funds) */}
             <section className="space-y-3.5 sm:space-y-4">
@@ -1459,9 +1463,10 @@ export default function HomePage() {
         state={safeSpendState}
         config={safeSpendConfig}
         onUpdateConfig={(newConfig) => {
-          const saved = setWeeklySafeSpendConfig(newConfig);
+          const saved = setSafeSpendConfig(newConfig);
           setSafeSpendConfigState(saved);
         }}
+
         wallets={wallets}
         dues={dues}
         tabs={tabs}

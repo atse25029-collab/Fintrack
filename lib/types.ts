@@ -208,35 +208,83 @@ export interface EarnFirstIncomeItem {
   time?: string;
 }
 
-// Weekly Horizon Safe Spend Engine Configuration & Live State
-export interface WeeklySafeSpendConfig {
-  expectedWagePerShift: number;       // default 300
-  plannedWorkShiftsThisWeek: number;  // default 5 (e.g. 5 days/shifts per week)
-  additionalWeeklyIncome?: number;    // default 0 (freelance/side-gig expected)
-  defaultWallet: 'Cash' | 'UPI / Bank'; // default 'Cash'
-  duesHorizonDays: number;            // default 7 (this week)
-  includeOwedToYouTabs: boolean;      // default false (conservative)
-  emergencyBufferPercent: number;     // default 0% (0 - 20%)
-  geminiApiKey?: string;              // dedicated Google AI Studio free tier key
-  // Legacy fields
+// ==========================================
+// Dynamic Runway & Financial Triad Types
+// ==========================================
+
+export interface DynamicUpcomingObligation {
+  id: string;
+  title: string;
+  amount: number;
+  daysUntilDue: number; // 0 = due today, 1 = tomorrow, 2 = in 2 days, etc.
+  dateStr: string;      // Formatted date string e.g. "Tue, 8 Sep"
+  dueDayOfMonth: number;
+  type: 'due' | 'tab';
+  category: string;
+  isBottleneck?: boolean;
+}
+
+export interface DynamicSafeSpendConfig {
+  expectedWagePerShift: number;       // ₹ wage per shift / day (default 300)
+  shiftsPerWeek: number;              // planned shifts per 7-day period (default 5)
+  additionalWeeklyIncome?: number;    // expected side/freelance inflow (default 0)
+  runwayHorizonDays: number;          // continuous rolling runway lookahead in days (e.g. 14, default 14)
+  defaultWallet: 'Cash' | 'UPI / Bank';
+  includeOwedToYouTabs: boolean;      // conservative by default (false)
+  emergencyBufferPercent: number;     // 0% - 20%
+  geminiApiKey?: string;
+  // Legacy / compatibility fields
+  plannedWorkShiftsThisWeek: number;
+  duesHorizonDays: number;
   expectedDailyWage: number;
   workFactor: number;
 }
 
 // Backward-compat aliases
-export type SafeSpendConfig = WeeklySafeSpendConfig;
-export type EarnFirstConfig = WeeklySafeSpendConfig;
+export type WeeklySafeSpendConfig = DynamicSafeSpendConfig;
+export type SafeSpendConfig = DynamicSafeSpendConfig;
+export type EarnFirstConfig = DynamicSafeSpendConfig;
 
-export interface WeeklySafeSpendState {
+export interface DynamicSafeSpendState {
   date: string;
-  totalLiquidFunds: number;           // cashInHand + accountBalance
+  runwayDays: number;                 // e.g. 14 days lookahead
+
+  // --- Financial Triad: Have, Earned, Will Earn ---
+  totalLiquidFunds: number;           // 1. WHAT YOU HAVE: Cash + Bank
+  wallets: {
+    cashInHand: number;
+    accountBalance: number;
+  };
+  earnedRecent: number;               // 2. WHAT YOU EARNED: Logged income in rolling window
+  shiftsCompleted: number;            // Completed shifts derived from logged shift wages
+  projectedRemainingIncome: number;   // 3. WHAT YOU WILL EARN: Remaining shift earnings in runway
+  shiftsRemaining: number;            // Planned shifts remaining to work
   expectedWagePerShift: number;
-  plannedWorkShiftsThisWeek: number;
-  shiftsCompletedThisWeek: number;
-  shiftsRemainingThisWeek: number;
-  earnedThisWeek: number;
-  remainingExpectedIncome: number;
-  totalObligationsLocked: number;     // total pending dues + you_owe tabs
+  shiftsPerWeek: number;
+
+  // --- Dynamic Runway & Bottleneck Constraint ---
+  upcomingTimeline: DynamicUpcomingObligation[]; // Chronological upcoming dues/tabs
+  activeBottleneck: {
+    title: string;
+    amount: number;
+    daysUntilDue: number;
+    criticalRate: number;             // Maximum burn rate allowed before this due
+    dueDateFormatted: string;
+  } | null;
+
+  // --- Daily Safe Spend Target ---
+  dailyTargetToday: number;           // Max safe spend per day (bottleneck rate)
+  safeSpendToday: number;             // Alias for dailyTargetToday
+  spentToday: number;
+  remainingSafeToday: number;         // dailyTargetToday - spentToday
+  safeLeftToday: number;              // Alias for remainingSafeToday
+  isOverspentToday: boolean;
+  overspentAmount: number;
+  percentUsedToday: number;
+
+  // --- Obligations & Cushion ---
+  totalObligationsInRunway: number;   // Sum of dues & debts in active runway
+  totalObligationsLocked: number;     // Alias for totalObligationsInRunway
   pendingDuesCount: number;
   pendingDuesTotal: number;
   pendingDuesList: Array<{
@@ -245,31 +293,39 @@ export interface WeeklySafeSpendState {
     amount: number;
     dueDayOfMonth: number;
     category: string;
+    daysUntilDue: number;
+    dueDateFormatted: string;
     isDueThisWeek?: boolean;
-    dueDateFormatted?: string;
   }>;
   pendingTabsCount: number;
   pendingTabsTotal: number;
-  pendingTabsList: Array<{ id: string; personName: string; amount: number; description: string; type: TabType }>;
-  netWeeklySafePool: number;          // liquid + remainingExpected - obligations
-  weekStartDate: string;              // Monday YYYY-MM-DD
-  weekEndDate: string;                // Sunday YYYY-MM-DD
-  weekCycleLabel: string;             // e.g. "Mon, 31 Aug – Sun, 6 Sep"
-  dayOfWeekName: string;              // "Monday", "Tuesday", ..., "Sunday"
-  dayOfWeekIndex: number;             // 1 (Monday) to 7 (Sunday)
-  isSunday: boolean;                  // true if today is Sunday (final day of week cycle)
-  isMonday: boolean;                  // true if today is Monday (first day of week cycle)
-  daysRemainingInWeek: number;        // 1 to 7 (Mon=7, Sun=1)
-  duesDueThisWeekCount: number;       // count of dues due between Monday and Sunday
-  duesDueThisWeekTotal: number;       // sum of dues due between Monday and Sunday
-  dailyTargetToday: number;           // netWeeklySafePool / daysRemaining
-  spentToday: number;
-  remainingSafeToday: number;         // dailyTargetToday - spentToday
-  safeLeftToday?: number;             // alias for remainingSafeToday
-  isOverspentToday: boolean;
-  overspentAmount: number;
-  percentUsedToday: number;
-  // Legacy compatibility fields
+  pendingTabsList: Array<{
+    id: string;
+    personName: string;
+    amount: number;
+    description: string;
+    type: TabType;
+    daysUntilDue?: number;
+  }>;
+  netRunwayPool: number;              // Have + Will Earn - Obligations
+  netWeeklySafePool: number;          // Backward-compat alias
+
+  // Backward-compatibility fields for week/calendar modules
+  weekStartDate: string;
+  weekEndDate: string;
+  weekCycleLabel: string;
+  dayOfWeekName: string;
+  dayOfWeekIndex: number;
+  isSunday: boolean;
+  isMonday: boolean;
+  daysRemainingInWeek: number;
+  duesDueThisWeekCount: number;
+  duesDueThisWeekTotal: number;
+  earnedThisWeek: number;             // Alias to earnedRecent
+  remainingExpectedIncome: number;    // Alias to projectedRemainingIncome
+  shiftsCompletedThisWeek: number;    // Alias to shiftsCompleted
+  shiftsRemainingThisWeek: number;    // Alias to shiftsRemaining
+  plannedWorkShiftsThisWeek: number;  // Alias to shiftsPerWeek
   remainingToday: number;
   totalAllowanceToday: number;
   totalIncomeToday: number;
@@ -284,8 +340,10 @@ export interface WeeklySafeSpendState {
   incomeList?: any[];
 }
 
-export type SafeSpendState = WeeklySafeSpendState;
-export type EarnFirstState = WeeklySafeSpendState;
+// Backward-compat aliases
+export type WeeklySafeSpendState = DynamicSafeSpendState;
+export type SafeSpendState = DynamicSafeSpendState;
+export type EarnFirstState = DynamicSafeSpendState;
 
 // AI Copilot Chat Types
 export interface ChatMessage {
@@ -295,46 +353,70 @@ export interface ChatMessage {
   timestamp: number;
 }
 
-export interface WeeklySafeSpendChatContext {
+export interface DynamicSafeSpendChatContext {
   date: string;
   dayOfWeek: string;
-  weekCycle: string;                  // "Monday to Sunday"
-  weekStartDate: string;              // Monday YYYY-MM-DD
-  weekEndDate: string;                // Sunday YYYY-MM-DD
-  weekCycleLabel: string;             // e.g. "Mon, 31 Aug – Sun, 6 Sep"
-  isSunday: boolean;                  // true if today is Sunday
-  remainingSafeToday: number;
-  dailyTargetToday: number;
-  spentToday: number;
-  isOverspentToday: boolean;
-  overspentAmount: number;
-  netWeeklySafePool: number;
-  daysRemainingInWeek: number;
-  duesDueThisWeekCount: number;
-  duesDueThisWeekTotal: number;
+  runwayDays: number;
+
+  // Triad: Have, Earned, Will Earn
   totalLiquidFunds: number;
   wallets: {
     cashInHand: number;
     accountBalance: number;
   };
-  workSchedule: {
-    expectedWagePerShift: number;
-    plannedWorkShiftsThisWeek: number;
-    shiftsCompletedThisWeek: number;
-    shiftsRemainingThisWeek: number;
-    earnedThisWeek: number;
-    remainingExpectedIncome: number;
-  };
-  obligations: {
-    totalLocked: number;
-    pendingDuesCount: number;
-    pendingDuesTotal: number;
-    pendingDues: Array<{ title: string; amount: number; dueDayOfMonth: number; category: string }>;
-    pendingTabsCount: number;
-    pendingTabsTotal: number;
-    tabsYouOwe: Array<{ personName: string; amount: number; description: string }>;
-    tabsOwedToYou: Array<{ personName: string; amount: number; description: string }>;
-  };
+  earnedRecent: number;
+  shiftsCompleted: number;
+  projectedRemainingIncome: number;
+  shiftsRemaining: number;
+  expectedWagePerShift: number;
+  shiftsPerWeek: number;
+
+  // Bottleneck & Daily Target
+  activeBottleneck: {
+    title: string;
+    amount: number;
+    daysUntilDue: number;
+    criticalRate: number;
+    dueDateFormatted: string;
+  } | null;
+  dailyTargetToday: number;
+  spentToday: number;
+  remainingSafeToday: number;
+  isOverspentToday: boolean;
+  overspentAmount: number;
+
+  // Timeline & Obligations
+  upcomingTimeline: Array<{
+    title: string;
+    amount: number;
+    daysUntilDue: number;
+    dateStr: string;
+    type: string;
+  }>;
+  totalObligationsInRunway: number;
+  pendingDues: Array<{
+    title: string;
+    amount: number;
+    dueDayOfMonth: number;
+    daysUntilDue: number;
+    dueDateFormatted: string;
+    category: string;
+  }>;
+  tabsYouOwe: Array<{ personName: string; amount: number; description: string }>;
+  tabsOwedToYou: Array<{ personName: string; amount: number; description: string }>;
+
+  // Legacy compatibility fields
+  weekCycle?: string;
+  weekCycleLabel?: string;
+  isSunday?: boolean;
+  netWeeklySafePool?: number;
+  daysRemainingInWeek?: number;
+  duesDueThisWeekCount?: number;
+  duesDueThisWeekTotal?: number;
+  workSchedule?: any;
+  obligations?: any;
 }
 
-export type EarnFirstChatContext = WeeklySafeSpendChatContext;
+export type WeeklySafeSpendChatContext = DynamicSafeSpendChatContext;
+export type EarnFirstChatContext = DynamicSafeSpendChatContext;
+

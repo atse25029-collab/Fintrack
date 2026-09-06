@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  WeeklySafeSpendState,
-  WeeklySafeSpendConfig,
+  DynamicSafeSpendState,
+  DynamicSafeSpendConfig,
   ChatMessage,
-  WeeklySafeSpendChatContext,
+  DynamicSafeSpendChatContext,
   WalletBalances,
   MonthlyDue,
   TabItem,
@@ -25,14 +25,16 @@ import {
   Lock,
   Calendar,
   CheckCircle2,
+  Clock,
+  Briefcase,
 } from 'lucide-react';
 
 interface EarnFirstChatModalProps {
   isOpen: boolean;
   onClose: () => void;
-  state: WeeklySafeSpendState;
-  config: WeeklySafeSpendConfig;
-  onUpdateConfig: (newConfig: WeeklySafeSpendConfig) => void;
+  state: DynamicSafeSpendState;
+  config: DynamicSafeSpendConfig;
+  onUpdateConfig: (newConfig: DynamicSafeSpendConfig) => void;
   wallets: WalletBalances;
   dues: MonthlyDue[];
   tabs?: TabItem[];
@@ -57,30 +59,29 @@ export default function EarnFirstChatModal({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Suggested prompt chips
+  // Suggested prompt chips tailored to continuous runway and the triad
   const SUGGESTED_CHIPS = [
-    'Can I afford a ₹250 meal tonight?',
-    'How many dues do I have left this week?',
-    'How is my Monday–Sunday week shaping up?',
-    'Break down my locked dues & debts',
-    'Can I take tomorrow off?',
+    'Why is my daily limit capped today?',
+    'Can I afford a ₹350 dinner tonight?',
+    'How much will I earn before my upcoming due?',
+    'Show my upcoming dues timeline',
+    'Break down what I have, earned, and will earn',
   ];
 
-  // Auto-generate warm initial greeting
+  // Auto-generate warm initial greeting with Triad + Bottleneck awareness
   useEffect(() => {
     if (isOpen && messages.length === 0) {
-      const todayName = state.dayOfWeekName || 'Today';
       const safeLeft = Math.max(0, state.remainingSafeToday);
+      const bottleneck = state.activeBottleneck;
 
-      const duesThisWeekText =
-        state.duesDueThisWeekCount > 0
-          ? `${state.duesDueThisWeekCount} bills due before Sunday (${formatCurrency(state.duesDueThisWeekTotal)})`
-          : 'no monthly bills due before Sunday';
+      const bottleneckNote = bottleneck
+        ? `• **Active Pacing:** Capped for **${bottleneck.title}** (${formatCurrency(bottleneck.amount)}) due in **${bottleneck.daysUntilDue === 0 ? 'Today!' : bottleneck.daysUntilDue === 1 ? 'Tomorrow' : `${bottleneck.daysUntilDue} days`}**`
+        : `• **Active Pacing:** Continuous ${state.runwayDays}-day rolling runway`;
 
       const greeting: ChatMessage = {
         id: `msg-greet-${Date.now()}`,
         role: 'assistant',
-        content: `Hey! I'm your FinTrack Copilot 👋\n\nHappy ${todayName}! Our budget week runs **Monday to Sunday** (${state.weekCycleLabel}). Here's your live situation:\n• **Safe to spend today:** ${formatCurrency(safeLeft)} (${state.daysRemainingInWeek === 1 ? 'ends tonight (Sunday)' : `${state.daysRemainingInWeek} days left in cycle`})\n• **Total Liquid Cash:** ${formatCurrency(state.totalLiquidFunds)} (Cash + Bank)\n• **Locked for bills & debts:** ${formatCurrency(state.totalObligationsLocked)} (${duesThisWeekText})\n• **Work progress:** ${state.shiftsCompletedThisWeek} of ${state.plannedWorkShiftsThisWeek} shifts completed\n\nWhat's on your mind? Ask me if you can afford something, how many dues are left this week, or if you can take time off!`,
+        content: `Hey! I'm your FinTrack Copilot 👋\n\nHere is your live cashflow reality:\n• **Safe to spend today:** ${formatCurrency(safeLeft)} (Target cap: ${formatCurrency(state.dailyTargetToday)}/day)\n${bottleneckNote}\n• **What You Have:** ${formatCurrency(state.totalLiquidFunds)} (Cash + Bank)\n• **What You Earned:** ${formatCurrency(state.earnedRecent)} (${state.shiftsCompleted} shifts done)\n• **What You Will Earn:** ~${formatCurrency(state.projectedRemainingIncome)} (${state.shiftsRemaining} planned shifts in runway)\n• **Locked for obligations:** ${formatCurrency(state.totalObligationsInRunway)}\n\nWhat's on your mind? Ask me if you can afford a purchase, why your limit is set, or how your upcoming shifts protect your bills!`,
         timestamp: Date.now(),
       };
       setMessages([greeting]);
@@ -125,62 +126,89 @@ export default function EarnFirstChatModal({
     setIsLoading(true);
 
     try {
-      const chatContext: WeeklySafeSpendChatContext = {
+      const chatContext: DynamicSafeSpendChatContext = {
         date: state.date,
         dayOfWeek: state.dayOfWeekName || 'Today',
-        weekCycle: 'Monday to Sunday',
-        weekStartDate: state.weekStartDate,
-        weekEndDate: state.weekEndDate,
-        weekCycleLabel: state.weekCycleLabel,
-        isSunday: state.isSunday,
-        remainingSafeToday: state.remainingSafeToday,
-        dailyTargetToday: state.dailyTargetToday,
-        spentToday: state.spentToday,
-        isOverspentToday: state.isOverspentToday,
-        overspentAmount: state.overspentAmount,
-        netWeeklySafePool: state.netWeeklySafePool,
-        daysRemainingInWeek: state.daysRemainingInWeek,
-        duesDueThisWeekCount: state.duesDueThisWeekCount,
-        duesDueThisWeekTotal: state.duesDueThisWeekTotal,
+        runwayDays: state.runwayDays,
+
+        // Triad
         totalLiquidFunds: state.totalLiquidFunds,
         wallets: {
           cashInHand: wallets.cashInHand,
           accountBalance: wallets.accountBalance,
         },
+        earnedRecent: state.earnedRecent,
+        shiftsCompleted: state.shiftsCompleted,
+        projectedRemainingIncome: state.projectedRemainingIncome,
+        shiftsRemaining: state.shiftsRemaining,
+        expectedWagePerShift: config.expectedWagePerShift,
+        shiftsPerWeek: config.shiftsPerWeek || config.plannedWorkShiftsThisWeek || 5,
+
+        // Bottleneck & Daily Target
+        activeBottleneck: state.activeBottleneck,
+        dailyTargetToday: state.dailyTargetToday,
+        spentToday: state.spentToday,
+        remainingSafeToday: state.remainingSafeToday,
+        isOverspentToday: state.isOverspentToday,
+        overspentAmount: state.overspentAmount,
+
+        // Timeline & Obligations
+        upcomingTimeline: (state.upcomingTimeline || []).map((u) => ({
+          title: u.title,
+          amount: u.amount,
+          daysUntilDue: u.daysUntilDue,
+          dateStr: u.dateStr,
+          type: u.type,
+        })),
+        totalObligationsInRunway: state.totalObligationsInRunway,
+        pendingDues: state.pendingDuesList.map((d) => ({
+          title: d.title,
+          amount: d.amount,
+          dueDayOfMonth: d.dueDayOfMonth,
+          daysUntilDue: d.daysUntilDue,
+          dueDateFormatted: d.dueDateFormatted,
+          category: d.category,
+        })),
+        tabsYouOwe: tabs
+          .filter((t) => t.status !== 'settled' && t.type === 'you_owe')
+          .map((t) => ({
+            personName: t.personName,
+            amount: Number(t.amount) || 0,
+            description: t.description,
+          })),
+        tabsOwedToYou: tabs
+          .filter((t) => t.status !== 'settled' && t.type === 'owed_to_you')
+          .map((t) => ({
+            personName: t.personName,
+            amount: Number(t.amount) || 0,
+            description: t.description,
+          })),
+
+        // Legacy compatibility
+        weekCycle: 'Continuous Dynamic Runway',
+        weekCycleLabel: state.weekCycleLabel,
+        isSunday: state.isSunday,
+        netWeeklySafePool: state.netRunwayPool,
+        daysRemainingInWeek: state.daysRemainingInWeek,
+        duesDueThisWeekCount: state.duesDueThisWeekCount,
+        duesDueThisWeekTotal: state.duesDueThisWeekTotal,
         workSchedule: {
           expectedWagePerShift: config.expectedWagePerShift,
-          plannedWorkShiftsThisWeek: config.plannedWorkShiftsThisWeek,
-          shiftsCompletedThisWeek: state.shiftsCompletedThisWeek,
-          shiftsRemainingThisWeek: state.shiftsRemainingThisWeek,
-          earnedThisWeek: state.earnedThisWeek,
-          remainingExpectedIncome: state.remainingExpectedIncome,
+          plannedWorkShiftsThisWeek: config.shiftsPerWeek || 5,
+          shiftsCompletedThisWeek: state.shiftsCompleted,
+          shiftsRemainingThisWeek: state.shiftsRemaining,
+          earnedThisWeek: state.earnedRecent,
+          remainingExpectedIncome: state.projectedRemainingIncome,
         },
         obligations: {
-          totalLocked: state.totalObligationsLocked,
+          totalLocked: state.totalObligationsInRunway,
           pendingDuesCount: state.pendingDuesCount,
           pendingDuesTotal: state.pendingDuesTotal,
-          pendingDues: state.pendingDuesList.map((d) => ({
-            title: d.title,
-            amount: d.amount,
-            dueDayOfMonth: d.dueDayOfMonth,
-            category: d.category,
-          })),
+          pendingDues: state.pendingDuesList,
           pendingTabsCount: state.pendingTabsCount,
           pendingTabsTotal: state.pendingTabsTotal,
-          tabsYouOwe: tabs
-            .filter((t) => t.status !== 'settled' && t.type === 'you_owe')
-            .map((t) => ({
-              personName: t.personName,
-              amount: Number(t.amount) || 0,
-              description: t.description,
-            })),
-          tabsOwedToYou: tabs
-            .filter((t) => t.status !== 'settled' && t.type === 'owed_to_you')
-            .map((t) => ({
-              personName: t.personName,
-              amount: Number(t.amount) || 0,
-              description: t.description,
-            })),
+          tabsYouOwe: tabs.filter((t) => t.status !== 'settled' && t.type === 'you_owe'),
+          tabsOwedToYou: tabs.filter((t) => t.status !== 'settled' && t.type === 'owed_to_you'),
         },
       };
 
@@ -204,7 +232,7 @@ export default function EarnFirstChatModal({
         role: 'assistant',
         content:
           data.reply ||
-          "I'm keeping an eye on your numbers! Let's make sure your upcoming bills and debts stay protected.",
+          "I'm monitoring your numbers! All your upcoming dues and tabs stay 100% protected.",
         timestamp: Date.now(),
       };
 
@@ -334,7 +362,7 @@ export default function EarnFirstChatModal({
 
         {/* Live Context Badges Strip */}
         <div className="px-4 py-2 bg-zinc-50 border-b border-zinc-200/80 flex items-center justify-between text-[11px] font-mono">
-          <div className="flex items-center gap-3 overflow-x-auto py-0.5 scrollbar-none">
+          <div className="flex items-center gap-2.5 overflow-x-auto py-0.5 scrollbar-none">
             <span className="text-zinc-600 shrink-0">
               Safe Left:{' '}
               <strong
@@ -351,26 +379,31 @@ export default function EarnFirstChatModal({
             </span>
             <span className="text-zinc-300">•</span>
             <span className="text-zinc-600 shrink-0">
-              Liquid: <strong className="text-black">{formatCurrency(state.totalLiquidFunds)}</strong>
+              Have: <strong className="text-black">{formatCurrency(state.totalLiquidFunds)}</strong>
+            </span>
+            <span className="text-zinc-300">•</span>
+            <span className="text-zinc-600 shrink-0">
+              Earned: <strong className="text-emerald-700">{formatCurrency(state.earnedRecent)}</strong>
+            </span>
+            <span className="text-zinc-300">•</span>
+            <span className="text-zinc-600 shrink-0">
+              Will Earn: <strong className="text-indigo-700">{formatCurrency(state.projectedRemainingIncome)}</strong>
             </span>
             <span className="text-zinc-300">•</span>
             <span className="text-zinc-600 shrink-0">
               Locked:{' '}
               <strong className="text-red-600">
-                -{formatCurrency(state.totalObligationsLocked)}
+                -{formatCurrency(state.totalObligationsInRunway)}
               </strong>
             </span>
-            <span className="text-zinc-300">•</span>
-            <span className="text-zinc-600 shrink-0">
-              Shifts:{' '}
-              <strong className="text-zinc-900">
-                {state.shiftsCompletedThisWeek}/{state.plannedWorkShiftsThisWeek}
-              </strong>
-            </span>
-            <span className="text-zinc-300">•</span>
-            <span className="px-1.5 py-0.5 bg-zinc-200 text-zinc-800 rounded font-bold text-[10px] shrink-0">
-              Mon–Sun Week ({state.daysRemainingInWeek === 1 ? 'Sunday / Ends tonight' : `${state.daysRemainingInWeek}d left`})
-            </span>
+            {state.activeBottleneck && (
+              <>
+                <span className="text-zinc-300">•</span>
+                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded font-bold text-[10px] shrink-0">
+                  ⚡ Paced: {state.activeBottleneck.title} ({state.activeBottleneck.daysUntilDue}d)
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -429,7 +462,7 @@ export default function EarnFirstChatModal({
                 <span className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
                 <span className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
                 <span className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" />
-                <span className="ml-1 text-[11px] font-mono">Thinking &amp; analyzing your cash...</span>
+                <span className="ml-1 text-[11px] font-mono">Analyzing runway &amp; bottleneck pace...</span>
               </div>
             </div>
           )}
@@ -466,7 +499,7 @@ export default function EarnFirstChatModal({
               type="text"
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
-              placeholder="e.g. Can I afford a ₹250 meal tonight?"
+              placeholder="e.g. Can I afford a ₹350 dinner tonight?"
               disabled={isLoading}
               className="flex-1 px-3.5 py-2.5 bg-zinc-50 border border-zinc-300 rounded-2xl text-xs sm:text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-hidden focus:border-black focus:bg-white transition-all"
             />

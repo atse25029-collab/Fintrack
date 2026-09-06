@@ -1,15 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { WeeklySafeSpendConfig, MonthlyDue } from '@/lib/types';
+import { DynamicSafeSpendConfig, MonthlyDue } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 import { X, Sliders, Shield, Wallet, Briefcase, Calendar, Lock, Sparkles, CheckCircle2 } from 'lucide-react';
 
 interface SafeSpendConfigModalProps {
   isOpen: boolean;
   onClose: () => void;
-  config: WeeklySafeSpendConfig;
-  onSave: (newConfig: WeeklySafeSpendConfig) => void;
+  config: DynamicSafeSpendConfig;
+  onSave: (newConfig: DynamicSafeSpendConfig) => void;
   dues?: MonthlyDue[];
 }
 
@@ -21,20 +21,20 @@ export default function SafeSpendConfigModal({
   dues = [],
 }: SafeSpendConfigModalProps) {
   const [wage, setWage] = useState((config.expectedWagePerShift || 300).toString());
-  const [shifts, setShifts] = useState((config.plannedWorkShiftsThisWeek || 5).toString());
+  const [shifts, setShifts] = useState((config.shiftsPerWeek || config.plannedWorkShiftsThisWeek || 5).toString());
   const [additional, setAdditional] = useState((config.additionalWeeklyIncome || 0).toString());
   const [wallet, setWallet] = useState<'Cash' | 'UPI / Bank'>(config.defaultWallet || 'Cash');
-  const [horizon, setHorizon] = useState((config.duesHorizonDays || 7).toString());
+  const [horizon, setHorizon] = useState((config.runwayHorizonDays || config.duesHorizonDays || 14).toString());
   const [includeOwed, setIncludeOwed] = useState(Boolean(config.includeOwedToYouTabs));
   const [buffer, setBuffer] = useState((config.emergencyBufferPercent || 0).toString());
 
   useEffect(() => {
     if (isOpen) {
       setWage((config.expectedWagePerShift || 300).toString());
-      setShifts((config.plannedWorkShiftsThisWeek || 5).toString());
+      setShifts((config.shiftsPerWeek || config.plannedWorkShiftsThisWeek || 5).toString());
       setAdditional((config.additionalWeeklyIncome || 0).toString());
       setWallet(config.defaultWallet || 'Cash');
-      setHorizon((config.duesHorizonDays || 7).toString());
+      setHorizon((config.runwayHorizonDays || config.duesHorizonDays || 14).toString());
       setIncludeOwed(Boolean(config.includeOwedToYouTabs));
       setBuffer((config.emergencyBufferPercent || 0).toString());
     }
@@ -45,7 +45,7 @@ export default function SafeSpendConfigModal({
   const numWage = Math.max(50, Number(wage) || 300);
   const numShifts = Math.min(7, Math.max(1, Number(shifts) || 5));
   const numAdditional = Math.max(0, Number(additional) || 0);
-  const numHorizon = Number(horizon) || 7;
+  const numHorizon = Number(horizon) || 14;
   const numBuffer = Math.min(25, Math.max(0, Number(buffer) || 0));
 
   // Simulation
@@ -57,15 +57,18 @@ export default function SafeSpendConfigModal({
     onSave({
       ...config,
       expectedWagePerShift: numWage,
+      shiftsPerWeek: numShifts,
       plannedWorkShiftsThisWeek: numShifts,
       additionalWeeklyIncome: numAdditional,
       defaultWallet: wallet,
+      runwayHorizonDays: numHorizon,
       duesHorizonDays: numHorizon,
       includeOwedToYouTabs: includeOwed,
       emergencyBufferPercent: numBuffer,
     });
     onClose();
   };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
