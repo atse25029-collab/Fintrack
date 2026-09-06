@@ -12,6 +12,7 @@ export const DEFAULT_EARN_FIRST_CONFIG: EarnFirstConfig = {
   workFactor: 0.70, // ~5 days a week (70% attendance)
   defaultWallet: 'Cash',
   duesReserveCapPercent: 40, // At most 40% of a shift goes to dues
+  geminiApiKey: '',
 };
 
 const CONFIG_KEY = 'fintrack_earn_first_config';

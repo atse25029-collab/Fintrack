@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { getStoredTheme, cycleTheme, ThemeMode } from '@/lib/theme/themeService';
 
+import CloudSyncBadge from '@/components/layout/CloudSyncBadge';
+
 export type AppSection = 'daily' | 'tabs' | 'dues' | 'analytics' | 'profile';
 
 interface HeaderProps {
@@ -27,6 +29,7 @@ interface HeaderProps {
   onOpenBudgetModal: () => void;
   onOpenExportModal: () => void;
   dueAlertCount?: number;
+  onForceSync?: () => void;
 }
 
 export default function Header({
@@ -36,6 +39,7 @@ export default function Header({
   onOpenBudgetModal,
   onOpenExportModal,
   dueAlertCount = 0,
+  onForceSync,
 }: HeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [liveTime, setLiveTime] = useState<string>('');
@@ -160,6 +164,7 @@ export default function Header({
 
         {/* Right Nav Actions: Scaled for mobile */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          <CloudSyncBadge onForceSync={onForceSync} />
           <NativeInstallButton />
 
           {/* AMOLED Theme Switcher */}

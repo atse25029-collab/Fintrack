@@ -214,6 +214,7 @@ export interface EarnFirstConfig {
   workFactor: number;              // default 0.70 (e.g. 5 days a week)
   defaultWallet: 'Cash' | 'UPI / Bank'; // default 'Cash'
   duesReserveCapPercent?: number;  // max % of a single shift that can be reserved (default 40%)
+  geminiApiKey?: string;           // dedicated Google AI Studio free tier key
 }
 
 export interface EarnFirstState {
@@ -244,4 +245,52 @@ export interface EarnFirstState {
     amount: number;
     dailyUrgencyCut: number;
   } | null;
+}
+
+// Earn-First AI Copilot Chat Types
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: number;
+}
+
+export interface EarnFirstChatContext {
+  date: string;
+  remainingToday: number;
+  totalAllowanceToday: number;
+  basePocketAllowance: number;
+  spentToday: number;
+  duesShieldToday: number;
+  restDayCushion: number;
+  carriedRollover: number;
+  weeklyNetRollover: number;
+  monthlyNetRollover: number;
+  isRestDay: boolean;
+  percentUsed: number;
+  totalIncomeToday: number;
+  incomeCountToday: number;
+  incomeItemsToday: EarnFirstIncomeItem[];
+  nextUrgentDue: {
+    title: string;
+    amount: number;
+    daysLeft: number;
+    dailyUrgencyCut: number;
+  } | null;
+  wallets: {
+    cashInHand: number;
+    accountBalance: number;
+  };
+  upcomingDues: Array<{
+    title: string;
+    amount: number;
+    dueDayOfMonth: number;
+    status: string;
+  }>;
+  config: {
+    expectedDailyWage: number;
+    workFactor: number;
+    defaultWallet: string;
+    duesReserveCapPercent?: number;
+  };
 }

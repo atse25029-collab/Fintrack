@@ -37,6 +37,7 @@ interface EarnFirstSafeSpendCardProps {
   ) => void;
   onToggleRestDay: () => void;
   dues?: MonthlyDue[];
+  onOpenCopilot?: () => void;
 }
 
 export default function EarnFirstSafeSpendCard({
@@ -47,6 +48,7 @@ export default function EarnFirstSafeSpendCard({
   onLogIncome,
   onToggleRestDay,
   dues = [],
+  onOpenCopilot,
 }: EarnFirstSafeSpendCardProps) {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
@@ -92,13 +94,27 @@ export default function EarnFirstSafeSpendCard({
           </div>
         </div>
 
-        <button
-          onClick={() => setIsConfigOpen(true)}
-          className="p-2 rounded-xl text-zinc-500 hover:text-black hover:bg-zinc-100 transition-colors"
-          title="Safe Spend Settings"
-        >
-          <Settings2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {onOpenCopilot && (
+            <button
+              onClick={onOpenCopilot}
+              type="button"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-black text-white hover:bg-zinc-800 transition-all active:scale-95 shadow-2xs"
+              title="Ask Earn-First AI Copilot"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span className="hidden sm:inline">Ask Copilot</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsConfigOpen(true)}
+            className="p-2 rounded-xl text-zinc-500 hover:text-black hover:bg-zinc-100 transition-colors"
+            title="Safe Spend Settings"
+          >
+            <Settings2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Main Metric & Progress Meter */}
