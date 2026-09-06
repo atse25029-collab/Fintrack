@@ -1017,6 +1017,7 @@ export default function HomePage() {
               onLogShift={handleLogShift}
               onLogIncome={handleLogIncome}
               onToggleRestDay={handleToggleRestDayAction}
+              dues={dues}
             />
 
             {/* Today's Activity Stream & Quick 1-Tap Actions (Directly After Liquid Funds) */}

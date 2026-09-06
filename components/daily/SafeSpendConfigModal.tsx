@@ -1,14 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
-import { EarnFirstConfig } from '@/lib/types';
-import { X, Sliders, Shield, Wallet, Briefcase } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { EarnFirstConfig, MonthlyDue } from '@/lib/types';
+import { calculateDueUrgency } from '@/lib/safeSpend/safeSpendEngine';
+import { formatCurrency } from '@/lib/utils';
+import { X, Sliders, Shield, Wallet, Briefcase, Sparkles, ArrowRight } from 'lucide-react';
 
 interface SafeSpendConfigModalProps {
   isOpen: boolean;
   onClose: () => void;
   config: EarnFirstConfig;
   onSave: (newConfig: EarnFirstConfig) => void;
+  dues?: MonthlyDue[];
 }
 
 export default function SafeSpendConfigModal({
@@ -16,21 +19,40 @@ export default function SafeSpendConfigModal({
   onClose,
   config,
   onSave,
+  dues = [],
 }: SafeSpendConfigModalProps) {
   const [wage, setWage] = useState(config.expectedDailyWage.toString());
   const [workFactor, setWorkFactor] = useState(config.workFactor.toString());
   const [wallet, setWallet] = useState<'Cash' | 'UPI / Bank'>(config.defaultWallet || 'Cash');
   const [cap, setCap] = useState((config.duesReserveCapPercent || 40).toString());
 
+  useEffect(() => {
+    if (isOpen) {
+      setWage(config.expectedDailyWage.toString());
+      setWorkFactor(config.workFactor.toString());
+      setWallet(config.defaultWallet || 'Cash');
+      setCap((config.duesReserveCapPercent || 40).toString());
+    }
+  }, [isOpen, config]);
+
   if (!isOpen) return null;
+
+  const numWage = Math.max(50, Number(wage) || 200);
+  const numFactor = Math.min(1, Math.max(0.2, Number(workFactor) || 0.70));
+  const numCap = Math.min(60, Math.max(15, Number(cap) || 40));
+
+  const urgency = calculateDueUrgency(dues, new Date(), numFactor);
+  const maxCapAmount = Math.round(numWage * (numCap / 100));
+  const simulatedShield = Math.min(urgency.totalDailyCut, maxCapAmount);
+  const simulatedSafePocket = Math.max(0, numWage - simulatedShield);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave({
-      expectedDailyWage: Math.max(50, Number(wage) || 200),
-      workFactor: Math.min(1, Math.max(0.2, Number(workFactor) || 0.70)),
+      expectedDailyWage: numWage,
+      workFactor: numFactor,
       defaultWallet: wallet,
-      duesReserveCapPercent: Math.min(60, Math.max(15, Number(cap) || 40)),
+      duesReserveCapPercent: numCap,
     });
     onClose();
   };
@@ -168,6 +190,47 @@ export default function SafeSpendConfigModal({
             />
             <p className="text-[10px] text-zinc-400">
               Guarantees you keep at least {100 - Number(cap)}% of every shift as pocket cash, even when big dues approach.
+            </p>
+          </div>
+
+          {/* Live Mathematical Model Simulation */}
+          <div className="p-3 bg-zinc-50 rounded-2xl border border-zinc-200/80 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-bold flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-amber-500" />
+                <span>Live Simulation (per shift):</span>
+              </span>
+              <span className="text-[10px] font-mono text-zinc-400">Formula preview</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5 text-center">
+              <div className="p-2 bg-white rounded-xl border border-zinc-200">
+                <span className="text-[9px] text-zinc-500 block">Gross Shift</span>
+                <span className="text-xs font-mono font-bold text-black">+{formatCurrency(numWage)}</span>
+              </div>
+              <div className="p-2 bg-white rounded-xl border border-zinc-200">
+                <span className="text-[9px] text-zinc-500 block">Dues Shield</span>
+                <span className={`text-xs font-mono font-bold ${simulatedShield > 0 ? 'text-zinc-900' : 'text-zinc-400'}`}>
+                  {simulatedShield > 0 ? `-${formatCurrency(simulatedShield)}` : '₹0'}
+                </span>
+              </div>
+              <div className="p-2 bg-white rounded-xl border border-zinc-200">
+                <span className="text-[9px] text-zinc-500 block">Pocket Cash</span>
+                <span className="text-xs font-mono font-bold text-emerald-600">
+                  +{formatCurrency(simulatedSafePocket)}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-zinc-500">
+              {urgency.totalDailyCut > 0 ? (
+                <>🛡️ Reserving <strong>{formatCurrency(simulatedShield)}</strong>/shift to protect upcoming monthly dues ({urgency.nearestDue?.title || 'bills'} due in {urgency.nearestDue?.daysLeft} days).</>
+              ) : (
+                <>💡 You currently have <strong>no unpaid monthly dues</strong>, so Dues Shield is ₹0 (100% of your earnings go to pocket cash).</>
+              )}
+            </p>
+            <p className="text-[10px] font-mono text-zinc-600 bg-white p-1.5 rounded-lg border border-zinc-200/60">
+              📌 Saving updates your 1-tap Home button to: <strong>+₹{numWage} Shift</strong>.
             </p>
           </div>
 

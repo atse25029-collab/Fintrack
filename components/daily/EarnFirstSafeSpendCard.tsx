@@ -36,6 +36,7 @@ interface EarnFirstSafeSpendCardProps {
     wallet: 'Cash' | 'UPI / Bank'
   ) => void;
   onToggleRestDay: () => void;
+  dues?: MonthlyDue[];
 }
 
 export default function EarnFirstSafeSpendCard({
@@ -45,6 +46,7 @@ export default function EarnFirstSafeSpendCard({
   onLogShift,
   onLogIncome,
   onToggleRestDay,
+  dues = [],
 }: EarnFirstSafeSpendCardProps) {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
@@ -332,6 +334,7 @@ export default function EarnFirstSafeSpendCard({
         onClose={() => setIsConfigOpen(false)}
         config={config}
         onSave={onUpdateConfig}
+        dues={dues}
       />
 
       {/* Quick Income Modal for Any Income Type */}
