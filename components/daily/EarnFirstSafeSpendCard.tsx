@@ -40,16 +40,17 @@ interface EarnFirstSafeSpendCardProps {
   onOpenCopilot?: () => void;
 }
 
-export default function EarnFirstSafeSpendCard({
-  state,
-  config,
-  onUpdateConfig,
-  onLogShift,
-  onLogIncome,
-  onToggleRestDay,
-  dues = [],
-  onOpenCopilot,
-}: EarnFirstSafeSpendCardProps) {
+export default function EarnFirstSafeSpendCard(props: any) {
+  const {
+    state = {},
+    config = {},
+    onUpdateConfig = () => {},
+    onLogShift = () => {},
+    onLogIncome,
+    onToggleRestDay = () => {},
+    dues = [],
+    onOpenCopilot,
+  } = props;
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
 
@@ -205,7 +206,7 @@ export default function EarnFirstSafeSpendCard({
           </div>
 
           <div className="flex flex-wrap gap-1.5">
-            {state.incomeItemsToday.map((item) => (
+            {state.incomeItemsToday.map((item: any) => (
               <div
                 key={item.id}
                 className="flex items-center gap-1.5 px-2.5 py-1 bg-white rounded-xl border border-zinc-200 text-[11px] shadow-2xs"

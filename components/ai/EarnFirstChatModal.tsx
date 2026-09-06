@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  EarnFirstState,
-  EarnFirstConfig,
+  WeeklySafeSpendState,
+  WeeklySafeSpendConfig,
   ChatMessage,
-  EarnFirstChatContext,
+  WeeklySafeSpendChatContext,
   WalletBalances,
   MonthlyDue,
+  TabItem,
 } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 import {
@@ -18,22 +19,23 @@ import {
   User,
   Key,
   ExternalLink,
-  Zap,
   ShieldCheck,
   TrendingUp,
-  RefreshCw,
-  HelpCircle,
+  Wallet,
+  Lock,
+  Calendar,
   CheckCircle2,
 } from 'lucide-react';
 
 interface EarnFirstChatModalProps {
   isOpen: boolean;
   onClose: () => void;
-  state: EarnFirstState;
-  config: EarnFirstConfig;
-  onUpdateConfig: (newConfig: EarnFirstConfig) => void;
+  state: WeeklySafeSpendState;
+  config: WeeklySafeSpendConfig;
+  onUpdateConfig: (newConfig: WeeklySafeSpendConfig) => void;
   wallets: WalletBalances;
   dues: MonthlyDue[];
+  tabs?: TabItem[];
 }
 
 export default function EarnFirstChatModal({
@@ -43,7 +45,8 @@ export default function EarnFirstChatModal({
   config,
   onUpdateConfig,
   wallets,
-  dues,
+  dues = [],
+  tabs = [],
 }: EarnFirstChatModalProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputQuery, setInputQuery] = useState('');
@@ -56,20 +59,31 @@ export default function EarnFirstChatModal({
 
   // Suggested prompt chips
   const SUGGESTED_CHIPS = [
-    'Can I afford a ₹180 dinner tonight?',
+    'Can I afford a ₹250 meal tonight?',
+    'How is my week shaping up?',
+    'Break down my locked dues & debts',
     'Can I take tomorrow off?',
-    'Why is my safe spend this amount?',
-    'How much should I earn for a ₹500 purchase?',
   ];
 
   // Initialize greeting on first open
   useEffect(() => {
     if (isOpen && messages.length === 0) {
-      const safeLeft = Math.max(0, state.remainingToday);
+      const dayNames = [
+        'Sunday',
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+      ];
+      const todayName = dayNames[new Date().getDay()];
+      const safeLeft = Math.max(0, state.remainingSafeToday);
+
       const greeting: ChatMessage = {
         id: `msg-greet-${Date.now()}`,
         role: 'assistant',
-        content: `👋 Hi! I'm your **Earn-First AI Copilot**.\n\nI have live awareness of your financial status today:\n- **Safe Left to Spend:** ₹${safeLeft}\n- **Total Inflows Today:** +₹${state.totalIncomeToday}\n- **Dues Shield:** ₹${state.duesShieldToday} reserved\n- **Rest Cushion:** ₹${state.restDayCushion}\n\nAsk me anything about your purchases, rest days, or how to hit your goals!`,
+        content: `Hey! I'm your FinTrack Copilot 👋\n\nHappy ${todayName}! Here's your real-time situation:\n• **Safe to spend today:** ₹${safeLeft}\n• **Total Liquid Cash:** ₹${state.totalLiquidFunds} (Cash + Bank)\n• **Locked for bills & debts:** ₹${state.totalObligationsLocked} (${state.pendingDuesCount} dues, ${state.pendingTabsCount} tabs)\n• **Work progress:** ${state.shiftsCompletedThisWeek} of ${state.plannedWorkShiftsThisWeek} shifts completed\n\nWhat's on your mind? Ask me if you can afford something, how to pace your week, or if you can take time off!`,
         timestamp: Date.now(),
       };
       setMessages([greeting]);
@@ -114,39 +128,66 @@ export default function EarnFirstChatModal({
     setIsLoading(true);
 
     try {
-      // Assemble live context
-      const chatContext: EarnFirstChatContext = {
+      const dayNames = [
+        'Sunday',
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+      ];
+      const dayOfWeekStr = dayNames[new Date().getDay()];
+
+      const chatContext: WeeklySafeSpendChatContext = {
         date: state.date,
-        remainingToday: state.remainingToday,
-        totalAllowanceToday: state.totalAllowanceToday,
-        basePocketAllowance: state.basePocketAllowance,
+        dayOfWeek: dayOfWeekStr,
+        remainingSafeToday: state.remainingSafeToday,
+        dailyTargetToday: state.dailyTargetToday,
         spentToday: state.spentToday,
-        duesShieldToday: state.duesShieldToday,
-        restDayCushion: state.restDayCushion,
-        carriedRollover: state.carriedRollover,
-        weeklyNetRollover: state.weeklyNetRollover,
-        monthlyNetRollover: state.monthlyNetRollover,
-        isRestDay: state.isRestDay,
-        percentUsed: state.percentUsed,
-        totalIncomeToday: state.totalIncomeToday,
-        incomeCountToday: state.incomeCountToday,
-        incomeItemsToday: state.incomeItemsToday || [],
-        nextUrgentDue: state.nextUrgentDue,
+        isOverspentToday: state.isOverspentToday,
+        overspentAmount: state.overspentAmount,
+        netWeeklySafePool: state.netWeeklySafePool,
+        daysRemainingInWeek: state.daysRemainingInWeek,
+        totalLiquidFunds: state.totalLiquidFunds,
         wallets: {
           cashInHand: wallets.cashInHand,
           accountBalance: wallets.accountBalance,
         },
-        upcomingDues: dues.map((d) => ({
-          title: d.title,
-          amount: d.amount,
-          dueDayOfMonth: d.dueDayOfMonth,
-          status: d.status,
-        })),
-        config: {
-          expectedDailyWage: config.expectedDailyWage,
-          workFactor: config.workFactor,
-          defaultWallet: config.defaultWallet,
-          duesReserveCapPercent: config.duesReserveCapPercent,
+        workSchedule: {
+          expectedWagePerShift: config.expectedWagePerShift,
+          plannedWorkShiftsThisWeek: config.plannedWorkShiftsThisWeek,
+          shiftsCompletedThisWeek: state.shiftsCompletedThisWeek,
+          shiftsRemainingThisWeek: state.shiftsRemainingThisWeek,
+          earnedThisWeek: state.earnedThisWeek,
+          remainingExpectedIncome: state.remainingExpectedIncome,
+        },
+        obligations: {
+          totalLocked: state.totalObligationsLocked,
+          pendingDuesCount: state.pendingDuesCount,
+          pendingDuesTotal: state.pendingDuesTotal,
+          pendingDues: state.pendingDuesList.map((d) => ({
+            title: d.title,
+            amount: d.amount,
+            dueDayOfMonth: d.dueDayOfMonth,
+            category: d.category,
+          })),
+          pendingTabsCount: state.pendingTabsCount,
+          pendingTabsTotal: state.pendingTabsTotal,
+          tabsYouOwe: tabs
+            .filter((t) => t.status !== 'settled' && t.type === 'you_owe')
+            .map((t) => ({
+              personName: t.personName,
+              amount: Number(t.amount) || 0,
+              description: t.description,
+            })),
+          tabsOwedToYou: tabs
+            .filter((t) => t.status !== 'settled' && t.type === 'owed_to_you')
+            .map((t) => ({
+              personName: t.personName,
+              amount: Number(t.amount) || 0,
+              description: t.description,
+            })),
         },
       };
 
@@ -170,7 +211,7 @@ export default function EarnFirstChatModal({
         role: 'assistant',
         content:
           data.reply ||
-          "I've analyzed your cashflow, but encountered a slight hiccup generating the text response. Your safe spend remains protected!",
+          "I'm keeping an eye on your numbers! Let's make sure your upcoming bills and debts stay protected.",
         timestamp: Date.now(),
       };
 
@@ -181,7 +222,7 @@ export default function EarnFirstChatModal({
         id: `msg-err-${Date.now()}`,
         role: 'assistant',
         content:
-          '⚠️ Could not reach the AI service right now. Please check your network connection or verify your API key.',
+          '⚠️ Could not reach the Copilot right now. Please check your network connection or verify your API key.',
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, errorMsg]);
@@ -214,12 +255,12 @@ export default function EarnFirstChatModal({
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <h3 className="font-bold text-sm text-zinc-950">Earn-First AI Copilot</h3>
+                <h3 className="font-bold text-sm text-zinc-950">FinTrack Copilot</h3>
                 <span className="px-1.5 py-0.2 bg-zinc-200/70 text-[9px] font-mono font-bold text-zinc-700 rounded-md">
                   Gemini 2.5
                 </span>
               </div>
-              <p className="text-[10px] text-zinc-500">Live Mathematical Spending Intelligence</p>
+              <p className="text-[10px] text-zinc-500">Your Street-Smart Financial Partner</p>
             </div>
           </div>
 
@@ -268,8 +309,8 @@ export default function EarnFirstChatModal({
             </div>
 
             <p className="text-[11px] text-zinc-500 leading-relaxed">
-              Use your own 100% free tier Gemini key from Google AI Studio so your chatbot limits are
-              completely dedicated and never shared.
+              Paste your own free Gemini API key from Google AI Studio so conversations never share or
+              hit rate limits.
             </p>
 
             <div className="flex gap-2">
@@ -305,32 +346,32 @@ export default function EarnFirstChatModal({
               Safe Left:{' '}
               <strong
                 className={
-                  state.remainingToday < 0
+                  state.remainingSafeToday < 0
                     ? 'text-red-600'
-                    : state.remainingToday === 0
+                    : state.remainingSafeToday === 0
                     ? 'text-amber-600'
                     : 'text-zinc-950'
                 }
               >
-                {formatCurrency(Math.max(0, state.remainingToday))}
+                {formatCurrency(Math.max(0, state.remainingSafeToday))}
               </strong>
             </span>
             <span className="text-zinc-300">•</span>
             <span className="text-zinc-600 shrink-0">
-              Earned: <strong className="text-black">+{formatCurrency(state.totalIncomeToday)}</strong>
+              Liquid: <strong className="text-black">{formatCurrency(state.totalLiquidFunds)}</strong>
             </span>
             <span className="text-zinc-300">•</span>
             <span className="text-zinc-600 shrink-0">
-              Shield:{' '}
-              <strong className="text-zinc-900">
-                {formatCurrency(state.duesShieldToday)}
+              Locked:{' '}
+              <strong className="text-red-600">
+                -{formatCurrency(state.totalObligationsLocked)}
               </strong>
             </span>
             <span className="text-zinc-300">•</span>
             <span className="text-zinc-600 shrink-0">
-              Cushion:{' '}
+              Shifts:{' '}
               <strong className="text-zinc-900">
-                {formatCurrency(state.restDayCushion)}
+                {state.shiftsCompletedThisWeek}/{state.plannedWorkShiftsThisWeek}
               </strong>
             </span>
           </div>
@@ -391,7 +432,7 @@ export default function EarnFirstChatModal({
                 <span className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
                 <span className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
                 <span className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" />
-                <span className="ml-1 text-[11px] font-mono">Analyzing real-time cashflow...</span>
+                <span className="ml-1 text-[11px] font-mono">Thinking &amp; analyzing your cash...</span>
               </div>
             </div>
           )}
@@ -428,7 +469,7 @@ export default function EarnFirstChatModal({
               type="text"
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
-              placeholder="e.g. Can I afford a ₹220 meal tonight?"
+              placeholder="e.g. Can I afford a ₹250 meal tonight?"
               disabled={isLoading}
               className="flex-1 px-3.5 py-2.5 bg-zinc-50 border border-zinc-300 rounded-2xl text-xs sm:text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-hidden focus:border-black focus:bg-white transition-all"
             />

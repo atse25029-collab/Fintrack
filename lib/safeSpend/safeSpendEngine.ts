@@ -1,348 +1,306 @@
 import {
   Transaction,
   MonthlyDue,
-  EarnFirstConfig,
-  EarnFirstState,
-  EarnFirstIncomeItem,
+  TabItem,
+  WalletBalances,
+  WeeklySafeSpendConfig,
+  WeeklySafeSpendState,
 } from '@/lib/types';
 import { getLocalDateString } from '@/lib/utils';
 
-export const DEFAULT_EARN_FIRST_CONFIG: EarnFirstConfig = {
-  expectedDailyWage: 200,
-  workFactor: 0.70, // ~5 days a week (70% attendance)
+export const DEFAULT_SAFE_SPEND_CONFIG: WeeklySafeSpendConfig = {
+  expectedWagePerShift: 300,
+  plannedWorkShiftsThisWeek: 5,
+  additionalWeeklyIncome: 0,
   defaultWallet: 'Cash',
-  duesReserveCapPercent: 40, // At most 40% of a shift goes to dues
+  duesHorizonDays: 7, // look ahead 7 days (this week)
+  includeOwedToYouTabs: false, // conservative by default
+  emergencyBufferPercent: 0, // 0% - 20%
   geminiApiKey: '',
+  expectedDailyWage: 300,
+  workFactor: 0.85,
 };
 
-const CONFIG_KEY = 'fintrack_earn_first_config';
-const REST_DAYS_KEY = 'fintrack_rest_days_log';
+// Backward-compat export
+export const DEFAULT_EARN_FIRST_CONFIG = DEFAULT_SAFE_SPEND_CONFIG;
+
+const CONFIG_KEY = 'fintrack_weekly_safespend_config';
+const LEGACY_CONFIG_KEY = 'fintrack_earn_first_config';
 
 // ==========================================
 // Configuration & Preferences Storage
 // ==========================================
 
-export function getEarnFirstConfig(): EarnFirstConfig {
-  if (typeof window === 'undefined') return DEFAULT_EARN_FIRST_CONFIG;
+export function getSafeSpendConfig(): WeeklySafeSpendConfig {
+  if (typeof window === 'undefined') return DEFAULT_SAFE_SPEND_CONFIG;
   try {
     const stored = localStorage.getItem(CONFIG_KEY);
     if (stored) {
-      return { ...DEFAULT_EARN_FIRST_CONFIG, ...JSON.parse(stored) };
+      return { ...DEFAULT_SAFE_SPEND_CONFIG, ...JSON.parse(stored) };
+    }
+    // Fall back to reading legacy config if present
+    const legacy = localStorage.getItem(LEGACY_CONFIG_KEY);
+    if (legacy) {
+      const parsed = JSON.parse(legacy);
+      return {
+        ...DEFAULT_SAFE_SPEND_CONFIG,
+        expectedWagePerShift: parsed.expectedDailyWage || 300,
+        defaultWallet: parsed.defaultWallet || 'Cash',
+        geminiApiKey: parsed.geminiApiKey || '',
+      };
     }
   } catch (err) {
-    console.warn('Error reading earn-first config:', err);
+    console.warn('Error reading safe spend config:', err);
   }
-  return DEFAULT_EARN_FIRST_CONFIG;
+  return DEFAULT_SAFE_SPEND_CONFIG;
 }
 
-export function setEarnFirstConfig(config: Partial<EarnFirstConfig>): EarnFirstConfig {
-  if (typeof window === 'undefined') return DEFAULT_EARN_FIRST_CONFIG;
-  const updated = { ...getEarnFirstConfig(), ...config };
+export const getWeeklySafeSpendConfig = getSafeSpendConfig;
+export const getEarnFirstConfig = getSafeSpendConfig; // backward-compat alias
+
+export function setSafeSpendConfig(config: Partial<WeeklySafeSpendConfig>): WeeklySafeSpendConfig {
+  if (typeof window === 'undefined') return DEFAULT_SAFE_SPEND_CONFIG;
+  const updated = { ...getSafeSpendConfig(), ...config };
   try {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new Event('fintrack_earn_first_changed'));
+    window.dispatchEvent(new Event('fintrack_safespend_changed'));
+    window.dispatchEvent(new Event('fintrack_earn_first_changed')); // backward-compat event
   } catch (err) {
-    console.warn('Error saving earn-first config:', err);
+    console.warn('Error saving safe spend config:', err);
   }
   return updated;
 }
 
-// ==========================================
-// Rest Day Tracking
-// ==========================================
-
-export function getRestDaysLog(): string[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const stored = localStorage.getItem(REST_DAYS_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch {
-    // ignore
-  }
-  return [];
-}
-
-export function toggleRestDay(date: string): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    const log = getRestDaysLog();
-    const exists = log.includes(date);
-    const updated = exists ? log.filter((d) => d !== date) : [...log, date];
-    localStorage.setItem(REST_DAYS_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new Event('fintrack_earn_first_changed'));
-    return !exists;
-  } catch {
-    return false;
-  }
-}
+export const setWeeklySafeSpendConfig = setSafeSpendConfig;
+export const setEarnFirstConfig = setSafeSpendConfig; // backward-compat alias
 
 // ==========================================
-// Due Date Proximity & Urgency Calculation
+// Weekly Horizon Safe Spend Computation Engine
 // ==========================================
 
-export interface DueUrgencySummary {
-  totalDailyCut: number;
-  nearestDue: {
-    id: string;
-    title: string;
-    daysLeft: number;
-    amount: number;
-    dailyUrgencyCut: number;
-  } | null;
-}
+export function computeWeeklySafeSpendState(
+  wallets: WalletBalances,
+  dues: MonthlyDue[] = [],
+  tabs: TabItem[] = [],
+  transactions: Transaction[] = [],
+  config: WeeklySafeSpendConfig = getSafeSpendConfig(),
+  currentDate: Date = new Date()
+): WeeklySafeSpendState {
+  const todayStr = getLocalDateString(currentDate);
 
-export function calculateDueUrgency(
-  dues: MonthlyDue[],
-  now: Date = new Date(),
-  workFactor: number = 0.70
-): DueUrgencySummary {
-  const currentDay = now.getDate();
-  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  // 1. Determine Current Week Span (Monday to Sunday)
+  // getDay(): 0 is Sunday, 1 is Monday ... 6 is Saturday
+  const rawDay = currentDate.getDay();
+  const dayOfWeek = rawDay === 0 ? 7 : rawDay; // Mon=1, Sun=7
+  const daysRemainingInWeek = Math.max(1, 8 - dayOfWeek); // Mon=7 days left, Sun=1 day left
 
-  let totalDailyCut = 0;
-  let nearestDue: DueUrgencySummary['nearestDue'] = null;
-  let minDaysLeft = Infinity;
+  const mondayDate = new Date(currentDate);
+  mondayDate.setDate(currentDate.getDate() - (dayOfWeek - 1));
+  const mondayStr = getLocalDateString(mondayDate);
 
-  for (const due of dues) {
-    // Skip if already paid this month
-    if (due.status === 'paid' && due.lastPaidDate?.startsWith(currentMonthStr)) {
-      continue;
-    }
+  // 2. Liquid Funds (Real money in hand + bank)
+  const cashInHand = Math.max(0, wallets?.cashInHand ?? 0);
+  const accountBalance = Math.max(0, wallets?.accountBalance ?? 0);
+  const totalLiquidFunds = Math.round((cashInHand + accountBalance) * 100) / 100;
 
-    const dueDay = due.dueDayOfMonth;
-    const daysLeft = dueDay >= currentDay ? dueDay - currentDay : 30 - (currentDay - dueDay);
-    const safeDaysLeft = Math.max(1, daysLeft);
-
-    // Expected shifts before this due date based on work probability factor
-    const expectedShifts = Math.max(1, Math.round(safeDaysLeft * Math.max(0.2, workFactor)));
-    const dailyUrgencyCut = Math.round(due.amount / expectedShifts);
-
-    totalDailyCut += dailyUrgencyCut;
-
-    if (daysLeft < minDaysLeft) {
-      minDaysLeft = daysLeft;
-      nearestDue = {
-        id: due.id,
-        title: due.title,
-        daysLeft,
-        amount: due.amount,
-        dailyUrgencyCut,
-      };
-    }
-  }
-
-  return { totalDailyCut, nearestDue };
-}
-
-// ==========================================
-// Full Backward-Compatible State Hydration
-// Hydrates from existing transactions, dues, and wallets
-// ==========================================
-
-export function computeEarnFirstState(
-  transactions: Transaction[],
-  dues: MonthlyDue[],
-  config: EarnFirstConfig = getEarnFirstConfig(),
-  customDate?: string
-): EarnFirstState {
-  const now = new Date();
-  const today = customDate || getLocalDateString(now);
-
-// 1. Inspect Today's Transactions for ALL types of income (including any tagged inflow)
-  const todayTransactions = transactions.filter((tx) => tx.date === today);
-  const todayIncomeTransactions = todayTransactions.filter(
-    (tx) =>
-      tx.type === 'income' ||
-      tx.category.toLowerCase().includes('inflow') ||
-      tx.description.toLowerCase().includes('inflow')
+  // 3. Work & Earnings This Week
+  // Filter all income transactions logged from Monday of this week through today
+  const weeklyIncomes = transactions.filter(
+    (tx) => tx.type === 'income' && tx.date >= mondayStr && tx.date <= todayStr
   );
 
-  const totalIncomeToday = todayIncomeTransactions.reduce((sum, tx) => sum + tx.amount, 0);
-  const incomeLoggedToday = totalIncomeToday > 0;
-  const incomeCountToday = todayIncomeTransactions.length;
+  const earnedThisWeek = weeklyIncomes.reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
 
-  const incomeItemsToday: EarnFirstIncomeItem[] = todayIncomeTransactions.map((tx) => ({
-    id: tx.id,
-    description: tx.description,
-    amount: tx.amount,
-    category: tx.category,
-    paymentMethod: tx.paymentMethod,
-    time: tx.time,
-  }));
-
-  // Itemize breakdown between daily shift/wage vs other inflows (cash in, cashback, tab repayment)
-  let shiftWageToday = 0;
-  let otherIncomeToday = 0;
-
-  for (const tx of todayIncomeTransactions) {
-    const desc = tx.description.toLowerCase();
-    const cat = tx.category.toLowerCase();
-    if (
-      desc.includes('wage') ||
+  // Identify completed shifts (income categorized as shift/wage or matching shift expectation)
+  const shiftIncomes = weeklyIncomes.filter((tx) => {
+    const desc = (tx.description || '').toLowerCase();
+    const cat = (tx.category || '').toLowerCase();
+    return (
       desc.includes('shift') ||
-      desc.includes('part time') ||
+      desc.includes('wage') ||
       desc.includes('daily') ||
       cat.includes('shift') ||
-      cat.includes('daily wage') ||
-      tx.amount === config.expectedDailyWage
-    ) {
-      shiftWageToday += tx.amount;
-    } else {
-      otherIncomeToday += tx.amount;
-    }
-  }
-
-  // Backward-compatibility aliases
-  const shiftLoggedToday = incomeLoggedToday;
-  const wageEarnedToday = totalIncomeToday;
-
-  // 2. Inspect Today's Non-Due Expenses (exclude any inflow)
-  const spentToday = todayTransactions
-    .filter(
-      (tx) =>
-        tx.type === 'expense' &&
-        !tx.isMonthlyDue &&
-        !tx.category.toLowerCase().includes('inflow') &&
-        !tx.description.toLowerCase().includes('inflow')
-    )
-    .reduce((sum, tx) => sum + tx.amount, 0);
-
-  // 3. Due Date Urgency & Shield Calculation (applies to total income)
-  const urgency = calculateDueUrgency(dues, now, config.workFactor);
-  let duesShieldToday = 0;
-
-  if (totalIncomeToday > 0) {
-    const maxReserveCap = Math.round(
-      totalIncomeToday * ((config.duesReserveCapPercent || 40) / 100)
+      cat.includes('wage')
     );
-    duesShieldToday = Math.min(urgency.totalDailyCut, maxReserveCap);
-  }
+  });
 
-  const basePocketAllowance = totalIncomeToday > 0
-    ? Math.max(0, totalIncomeToday - duesShieldToday)
-    : 0;
-
-  // 4. Derive Historical Rollover and Cushion from Past 7 Days
-  // This guarantees existing user data is immediately honored
-  let carriedRollover = 0;
-  let restDayCushion = 0;
-  let weeklyNetRollover = 0;
-  let monthlyNetRollover = 0;
-
-  const currentMonthPrefix = today.substring(0, 7);
-
-  // Group past transactions by date
-  const pastDaysMap = new Map<string, { income: number; expense: number }>();
-
-  for (const tx of transactions) {
-    if (tx.date >= today) continue; // Only historical days
-    if (!pastDaysMap.has(tx.date)) {
-      pastDaysMap.set(tx.date, { income: 0, expense: 0 });
-    }
-    const dayData = pastDaysMap.get(tx.date)!;
-    if (
-      tx.type === 'income' ||
-      tx.category.toLowerCase().includes('inflow') ||
-      tx.description.toLowerCase().includes('inflow')
-    ) {
-      dayData.income += tx.amount;
-    } else if (
-      tx.type === 'expense' &&
-      !tx.isMonthlyDue &&
-      !tx.category.toLowerCase().includes('inflow') &&
-      !tx.description.toLowerCase().includes('inflow')
-    ) {
-      dayData.expense += tx.amount;
-    }
-  }
-
-  // Calculate net variances across past 7 days
-  const sortedPastDates = Array.from(pastDaysMap.keys()).sort().reverse();
-  const past7Days = sortedPastDates.slice(0, 7);
-
-  for (const date of past7Days) {
-    const day = pastDaysMap.get(date)!;
-    const estimatedAllowance =
-      day.income > 0 ? Math.round(day.income * 0.75) : Math.round(config.expectedDailyWage * 0.5);
-    const variance = estimatedAllowance - day.expense;
-
-    if (variance > 0) {
-      restDayCushion += Math.round(variance * 0.5); // 50% goes to cushion
-      carriedRollover += Math.round(variance * 0.5); // 50% rolls over
-    } else {
-      carriedRollover += variance; // Negative deficit carries over
-    }
-
-    weeklyNetRollover += variance;
-  }
-
-  // Monthly net calculation
-  for (const [date, day] of pastDaysMap.entries()) {
-    if (date.startsWith(currentMonthPrefix)) {
-      const estimatedAllowance =
-        day.income > 0 ? Math.round(day.income * 0.75) : Math.round(config.expectedDailyWage * 0.5);
-      monthlyNetRollover += estimatedAllowance - day.expense;
-    }
-  }
-
-  // Smooth rollover limits: cap positive rollover at 1.5x expected wage so user doesn't overspend recklessly,
-  // and cap deficit compensation at -50% of expected wage so user isn't starved.
-  carriedRollover = Math.max(
-    -Math.round(config.expectedDailyWage * 0.5),
-    Math.min(Math.round(config.expectedDailyWage * 1.5), carriedRollover)
+  const shiftsCompletedThisWeek = Math.min(
+    config.plannedWorkShiftsThisWeek,
+    shiftIncomes.length > 0
+      ? shiftIncomes.length
+      : Math.floor(earnedThisWeek / (config.expectedWagePerShift || 300))
   );
 
-  // Ensure rest-day cushion has at least a healthy baseline if user has liquid funds
-  restDayCushion = Math.max(50, restDayCushion);
+  const shiftsRemainingThisWeek = Math.max(
+    0,
+    config.plannedWorkShiftsThisWeek - shiftsCompletedThisWeek
+  );
 
-  // 5. Rest Day Status
-  const restDaysLog = getRestDaysLog();
-  const isRestDay = !shiftLoggedToday && restDaysLog.includes(today);
+  // Remaining expected work earnings yet to be earned this week
+  const remainingWorkIncome = shiftsRemainingThisWeek * config.expectedWagePerShift;
+  const remainingExpectedIncome =
+    remainingWorkIncome + Math.max(0, config.additionalWeeklyIncome || 0);
 
-  // 6. Total Safe Spend Today Calculation
-  let totalAllowanceToday = 0;
+  // 4. All Remaining Dues (Not just the next one)
+  // Find all unpaid dues due within the horizon (e.g. next 7 days / this week)
+  const currentDayOfMonth = currentDate.getDate();
+  const horizonDays = config.duesHorizonDays || 7;
 
-  if (shiftLoggedToday) {
-    // Working day: base pocket allowance + carried rollover from yesterday
-    totalAllowanceToday = Math.max(40, basePocketAllowance + carriedRollover);
-  } else if (isRestDay) {
-    // Rest day: draw pocket money from Rest-Day Cushion Fund!
-    totalAllowanceToday = Math.min(restDayCushion, 120);
-  } else {
-    // Pending shift or baseline day
-    const baseline = Math.round(config.expectedDailyWage * 0.35); // e.g. ₹70 for basics
-    totalAllowanceToday = Math.max(0, baseline + carriedRollover);
+  const pendingDuesList = dues
+    .filter((due) => due.status !== 'paid')
+    .filter((due) => {
+      // Calculate days remaining until due day
+      let diff = due.dueDayOfMonth - currentDayOfMonth;
+      if (diff < 0) {
+        // Already passed this month -> overdue or upcoming next month
+        diff += 30;
+      }
+      return diff <= horizonDays;
+    })
+    .map((due) => ({
+      id: due.id,
+      title: due.title,
+      amount: Number(due.amount) || 0,
+      dueDayOfMonth: due.dueDayOfMonth,
+      category: due.category || 'Bills & Utilities',
+    }));
+
+  const pendingDuesTotal = pendingDuesList.reduce((sum, d) => sum + d.amount, 0);
+  const pendingDuesCount = pendingDuesList.length;
+
+  // 5. All Remaining Tabs (Ring-fence what you owe)
+  const pendingYouOweTabs = tabs.filter(
+    (t) => t.status !== 'settled' && t.type === 'you_owe'
+  );
+
+  const pendingOwedToYouTabs = tabs.filter(
+    (t) => t.status !== 'settled' && t.type === 'owed_to_you'
+  );
+
+  const youOweTotal = pendingYouOweTabs.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  const owedToYouTotal = pendingOwedToYouTabs.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+  // If user opted to include money friends owe them, subtract conservatively
+  const effectiveTabsDebt = config.includeOwedToYouTabs
+    ? Math.max(0, youOweTotal - owedToYouTotal)
+    : youOweTotal;
+
+  const pendingTabsList = [
+    ...pendingYouOweTabs.map((t) => ({
+      id: t.id,
+      personName: t.personName,
+      amount: Number(t.amount) || 0,
+      description: t.description,
+      type: 'you_owe' as const,
+    })),
+    ...(config.includeOwedToYouTabs
+      ? pendingOwedToYouTabs.map((t) => ({
+          id: t.id,
+          personName: t.personName,
+          amount: Number(t.amount) || 0,
+          description: t.description,
+          type: 'owed_to_you' as const,
+        }))
+      : []),
+  ];
+
+  const pendingTabsCount = pendingYouOweTabs.length;
+  const pendingTabsTotal = youOweTotal;
+
+  // 6. Total Committed Obligations Ring-Fenced
+  const totalObligationsLocked = Math.round((pendingDuesTotal + effectiveTabsDebt) * 100) / 100;
+
+  // 7. Net Weekly Safe Discretionary Pool
+  let rawPool = totalLiquidFunds + remainingExpectedIncome - totalObligationsLocked;
+
+  // Apply emergency safety buffer if configured
+  if (config.emergencyBufferPercent > 0 && rawPool > 0) {
+    const buffer = (rawPool * config.emergencyBufferPercent) / 100;
+    rawPool -= buffer;
   }
 
-  const remainingToday = totalAllowanceToday - spentToday;
-  const percentUsed =
-    totalAllowanceToday > 0
-      ? Math.min(100, Math.round((spentToday / totalAllowanceToday) * 100))
+  const netWeeklySafePool = Math.max(0, Math.round(rawPool * 100) / 100);
+
+  // 8. Today's Safe Spend Target
+  const dailyTargetToday = Math.max(
+    0,
+    Math.round(netWeeklySafePool / daysRemainingInWeek)
+  );
+
+  // Non-due spending logged today
+  const spentToday = transactions
+    .filter((tx) => tx.date === todayStr && tx.type === 'expense' && !tx.isMonthlyDue)
+    .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+
+  const remainingSafeToday = Math.round((dailyTargetToday - spentToday) * 100) / 100;
+  const isOverspentToday = remainingSafeToday < 0;
+  const overspentAmount = isOverspentToday ? Math.abs(remainingSafeToday) : 0;
+
+  const percentUsedToday =
+    dailyTargetToday > 0
+      ? Math.min(100, Math.round((spentToday / dailyTargetToday) * 100))
       : spentToday > 0
       ? 100
       : 0;
 
   return {
-    date: today,
-    shiftLoggedToday,
-    incomeLoggedToday,
-    wageEarnedToday,
-    totalIncomeToday,
-    incomeCountToday,
-    incomeItemsToday,
-    shiftWageToday,
-    otherIncomeToday,
-    basePocketAllowance,
-    carriedRollover,
-    totalAllowanceToday,
+    date: todayStr,
+    totalLiquidFunds,
+    expectedWagePerShift: config.expectedWagePerShift,
+    plannedWorkShiftsThisWeek: config.plannedWorkShiftsThisWeek,
+    shiftsCompletedThisWeek,
+    shiftsRemainingThisWeek,
+    earnedThisWeek,
+    remainingExpectedIncome,
+    totalObligationsLocked,
+    pendingDuesCount,
+    pendingDuesTotal,
+    pendingDuesList,
+    pendingTabsCount,
+    pendingTabsTotal,
+    pendingTabsList,
+    netWeeklySafePool,
+    daysRemainingInWeek,
+    dailyTargetToday,
     spentToday,
-    remainingToday,
-    duesShieldToday,
-    restDayCushion,
-    weeklyNetRollover,
-    monthlyNetRollover,
-    isRestDay,
-    percentUsed,
-    nextUrgentDue: urgency.nearestDue,
+    remainingSafeToday,
+    isOverspentToday,
+    overspentAmount,
+    percentUsedToday,
+    // Legacy compatibility fields
+    safeLeftToday: Math.max(0, remainingSafeToday),
+    remainingToday: Math.max(0, remainingSafeToday),
+    totalAllowanceToday: dailyTargetToday,
+    totalIncomeToday: earnedThisWeek,
+    percentUsed: percentUsedToday,
+    isRestDay: false,
+    incomeCountToday: 0,
+    workFactor: config.workFactor || 0.85,
+    carriedRollover: 0,
+    dailyDueHoldback: 0,
+    effectiveIncomeToday: earnedThisWeek,
+    nextDue: null,
+    incomeList: [],
   };
+}
+
+// Backward-compat bridge
+export function computeEarnFirstState(
+  transactions: Transaction[] = [],
+  dues: MonthlyDue[] = [],
+  config: any = getSafeSpendConfig(),
+  wallets?: WalletBalances,
+  tabs?: TabItem[]
+): WeeklySafeSpendState {
+  const fallbackWallets: WalletBalances = wallets || {
+    cashInHand: 0,
+    accountBalance: 0,
+    lastUpdated: Date.now(),
+  };
+  return computeWeeklySafeSpendState(fallbackWallets, dues, tabs || [], transactions, config);
+}
+
+// Legacy toggle rest day stub
+export function toggleRestDay(date: string): boolean {
+  return false;
 }

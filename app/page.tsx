@@ -23,15 +23,14 @@ import MonthlyDuesManager from '@/components/dues/MonthlyDuesManager';
 import MonthlyDueModal from '@/components/dues/MonthlyDueModal';
 import AnalyticsView from '@/components/analytics/AnalyticsView';
 import ProfileSection from '@/components/profile/ProfileSection';
-import EarnFirstSafeSpendCard from '@/components/daily/EarnFirstSafeSpendCard';
+import WeeklySafeSpendCard from '@/components/daily/WeeklySafeSpendCard';
 import PasteSmsModal from '@/components/daily/PasteSmsModal';
 import ReceiptScanModal from '@/components/daily/ReceiptScanModal';
 import MonthlyStatementModal from '@/components/analytics/MonthlyStatementModal';
 import {
-  getEarnFirstConfig,
-  setEarnFirstConfig,
-  computeEarnFirstState,
-  toggleRestDay,
+  getWeeklySafeSpendConfig,
+  setWeeklySafeSpendConfig,
+  computeWeeklySafeSpendState,
 } from '@/lib/safeSpend/safeSpendEngine';
 import { getStoredTheme, applyTheme } from '@/lib/theme/themeService';
 import { ParsedSmsTransaction } from '@/lib/parser/smsParser';
@@ -68,8 +67,8 @@ import {
   TransactionType,
   WalletBalances,
   QuickPreset,
-  EarnFirstConfig,
-  EarnFirstState,
+  WeeklySafeSpendConfig,
+  WeeklySafeSpendState,
 } from '@/lib/types';
 import {
   INITIAL_TRANSACTIONS,
@@ -132,30 +131,31 @@ export default function HomePage() {
   const [isDueModalOpen, setIsDueModalOpen] = useState(false);
   const [editingDue, setEditingDue] = useState<MonthlyDue | null>(null);
 
-  // Earn-First Safe Spend & New Feature Modals State
-  const [earnFirstConfig, setEarnFirstConfigState] = useState<EarnFirstConfig>(getEarnFirstConfig());
-  const [earnFirstTick, setEarnFirstTick] = useState(0);
+  // Weekly Safe Spend & New Feature Modals State
+  const [safeSpendConfig, setSafeSpendConfigState] = useState<WeeklySafeSpendConfig>(getWeeklySafeSpendConfig());
+  const [safeSpendTick, setSafeSpendTick] = useState(0);
   const [isPasteSmsOpen, setIsPasteSmsOpen] = useState(false);
   const [isReceiptScanOpen, setIsReceiptScanOpen] = useState(false);
   const [isStatementOpen, setIsStatementOpen] = useState(false);
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
 
-  // Compute live Earn-First Safe Spend State from current transactions, dues, and config
-  const earnFirstState = useMemo(() => {
-    return computeEarnFirstState(transactions, dues, earnFirstConfig);
-  }, [transactions, dues, earnFirstConfig, earnFirstTick]);
+  // Compute live Weekly Safe Spend State from wallets, dues, tabs, transactions, and config
+  const safeSpendState = useMemo(() => {
+    return computeWeeklySafeSpendState(wallets, dues, tabs, transactions, safeSpendConfig);
+  }, [wallets, dues, tabs, transactions, safeSpendConfig, safeSpendTick]);
 
   // Initial load from storage and background sync
   useEffect(() => {
-    // 0. Initialize theme & Earn-First configuration
+    // 0. Initialize theme & Safe Spend configuration
     applyTheme(getStoredTheme());
-    setEarnFirstConfigState(getEarnFirstConfig());
+    setSafeSpendConfigState(getWeeklySafeSpendConfig());
 
-    const handleEarnFirstChanged = () => {
-      setEarnFirstConfigState(getEarnFirstConfig());
-      setEarnFirstTick((prev) => prev + 1);
+    const handleSafeSpendChanged = () => {
+      setSafeSpendConfigState(getWeeklySafeSpendConfig());
+      setSafeSpendTick((prev) => prev + 1);
     };
-    window.addEventListener('fintrack_earn_first_changed', handleEarnFirstChanged);
+    window.addEventListener('fintrack_safespend_changed', handleSafeSpendChanged);
+    window.addEventListener('fintrack_earn_first_changed', handleSafeSpendChanged);
 
     // 1. Initial load from local device storage
     const initialTxs = getLocalTransactions();
@@ -276,7 +276,8 @@ export default function HomePage() {
 
     return () => {
       stopContinuousSync();
-      window.removeEventListener('fintrack_earn_first_changed', handleEarnFirstChanged);
+      window.removeEventListener('fintrack_safespend_changed', handleSafeSpendChanged);
+      window.removeEventListener('fintrack_earn_first_changed', handleSafeSpendChanged);
       window.removeEventListener('fintrack_data_changed', handleStorageChange);
       window.removeEventListener('fintrack_budget_changed', handleStorageChange);
       window.removeEventListener('fintrack_tabs_changed', handleStorageChange);
@@ -525,7 +526,7 @@ export default function HomePage() {
     [handleSaveTransaction]
   );
 
-  // Earn-First Shift Logging Handler
+  // Weekly Safe Spend Shift Logging Handler
   const handleLogShift = useCallback(
     (amount: number, description: string) => {
       const realTime = getExactRealTime();
@@ -534,15 +535,15 @@ export default function HomePage() {
         amount,
         category: 'Daily Wage / Shift',
         type: 'income',
-        paymentMethod: earnFirstConfig.defaultWallet,
+        paymentMethod: safeSpendConfig.defaultWallet,
         date: realTime.date,
         time: realTime.time,
         timestamp: realTime.timestamp,
-        notes: 'Logged via Earn-First Shift Preset',
+        notes: 'Logged via Safe Spend Shift Preset',
       });
-      setEarnFirstTick((prev) => prev + 1);
+      setSafeSpendTick((prev) => prev + 1);
     },
-    [earnFirstConfig.defaultWallet, handleSaveTransaction]
+    [safeSpendConfig.defaultWallet, handleSaveTransaction]
   );
 
   const handleLogIncome = useCallback(
@@ -558,23 +559,16 @@ export default function HomePage() {
         amount,
         category: category || 'Other Inflows',
         type: 'income',
-        paymentMethod: wallet || earnFirstConfig.defaultWallet,
+        paymentMethod: wallet || safeSpendConfig.defaultWallet,
         date: realTime.date,
         time: realTime.time,
         timestamp: realTime.timestamp,
-        notes: `Logged via Earn-First Income (${category})`,
+        notes: `Logged via Safe Spend Income (${category})`,
       });
-      setEarnFirstTick((prev) => prev + 1);
+      setSafeSpendTick((prev) => prev + 1);
     },
-    [earnFirstConfig.defaultWallet, handleSaveTransaction]
+    [safeSpendConfig.defaultWallet, handleSaveTransaction]
   );
-
-  // Earn-First Rest Day Toggle
-  const handleToggleRestDayAction = useCallback(() => {
-    const today = getLocalDateString(new Date());
-    toggleRestDay(today);
-    setEarnFirstTick((prev) => prev + 1);
-  }, []);
 
   // Bank SMS Transaction Confirmation
   const handleConfirmSmsTx = useCallback(
@@ -591,7 +585,7 @@ export default function HomePage() {
         timestamp: realTime.timestamp,
         notes: `SMS Log: "${parsed.rawText.substring(0, 45)}..."`,
       });
-      setEarnFirstTick((prev) => prev + 1);
+      setSafeSpendTick((prev) => prev + 1);
     },
     [handleSaveTransaction]
   );
@@ -618,7 +612,7 @@ export default function HomePage() {
         timestamp: realTime.timestamp,
         notes: 'AI Scanned Bill / UPI Screenshot',
       });
-      setEarnFirstTick((prev) => prev + 1);
+      setSafeSpendTick((prev) => prev + 1);
     },
     [handleSaveTransaction]
   );
@@ -1169,17 +1163,16 @@ export default function HomePage() {
               onOpenAdjustModal={() => setIsWalletModalOpen(true)}
             />
 
-            {/* Improvised Earn-First Safe Spend Engine (Backward-Compatible & Urgency-Weighted) */}
-            <EarnFirstSafeSpendCard
-              state={earnFirstState}
-              config={earnFirstConfig}
+            {/* Weekly Safe to Spend Engine (Liquid Cash + Shift Income - Protected Dues & Tabs) */}
+            <WeeklySafeSpendCard
+              state={safeSpendState}
+              config={safeSpendConfig}
               onUpdateConfig={(newConfig) => {
-                const saved = setEarnFirstConfig(newConfig);
-                setEarnFirstConfigState(saved);
+                const saved = setWeeklySafeSpendConfig(newConfig);
+                setSafeSpendConfigState(saved);
               }}
               onLogShift={handleLogShift}
               onLogIncome={handleLogIncome}
-              onToggleRestDay={handleToggleRestDayAction}
               dues={dues}
               onOpenCopilot={() => setIsChatModalOpen(true)}
             />
@@ -1453,24 +1446,25 @@ export default function HomePage() {
         wallets={wallets}
       />
 
-      {/* Earn-First AI Copilot Floating Trigger */}
+      {/* AI Copilot Floating Trigger */}
       <EarnFirstChatTrigger
         onClick={() => setIsChatModalOpen(true)}
-        safeRemaining={earnFirstState.remainingToday}
+        safeRemaining={safeSpendState.remainingSafeToday}
       />
 
-      {/* Earn-First AI Copilot Chat Modal */}
+      {/* AI Copilot Chat Modal */}
       <EarnFirstChatModal
         isOpen={isChatModalOpen}
         onClose={() => setIsChatModalOpen(false)}
-        state={earnFirstState}
-        config={earnFirstConfig}
+        state={safeSpendState}
+        config={safeSpendConfig}
         onUpdateConfig={(newConfig) => {
-          const saved = setEarnFirstConfig(newConfig);
-          setEarnFirstConfigState(saved);
+          const saved = setWeeklySafeSpendConfig(newConfig);
+          setSafeSpendConfigState(saved);
         }}
         wallets={wallets}
         dues={dues}
+        tabs={tabs}
       />
     </div>
   );

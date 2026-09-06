@@ -208,46 +208,69 @@ export interface EarnFirstIncomeItem {
   time?: string;
 }
 
-// Earn-First Safe Spend Engine Configuration & Live State
-export interface EarnFirstConfig {
-  expectedDailyWage: number;       // default 200
-  workFactor: number;              // default 0.70 (e.g. 5 days a week)
+// Weekly Horizon Safe Spend Engine Configuration & Live State
+export interface WeeklySafeSpendConfig {
+  expectedWagePerShift: number;       // default 300
+  plannedWorkShiftsThisWeek: number;  // default 5 (e.g. 5 days/shifts per week)
+  additionalWeeklyIncome?: number;    // default 0 (freelance/side-gig expected)
   defaultWallet: 'Cash' | 'UPI / Bank'; // default 'Cash'
-  duesReserveCapPercent?: number;  // max % of a single shift that can be reserved (default 40%)
-  geminiApiKey?: string;           // dedicated Google AI Studio free tier key
+  duesHorizonDays: number;            // default 7 (this week)
+  includeOwedToYouTabs: boolean;      // default false (conservative)
+  emergencyBufferPercent: number;     // default 0% (0 - 20%)
+  geminiApiKey?: string;              // dedicated Google AI Studio free tier key
+  // Legacy fields
+  expectedDailyWage: number;
+  workFactor: number;
 }
 
-export interface EarnFirstState {
+// Backward-compat aliases
+export type SafeSpendConfig = WeeklySafeSpendConfig;
+export type EarnFirstConfig = WeeklySafeSpendConfig;
+
+export interface WeeklySafeSpendState {
   date: string;
-  shiftLoggedToday: boolean;        // Backward-compat: true if any income was logged today
-  incomeLoggedToday: boolean;       // True if any income was logged today
-  wageEarnedToday: number;          // Backward-compat: total income earned today
-  totalIncomeToday: number;         // Total income from all sources earned today
-  incomeCountToday: number;         // Count of income transactions today
-  incomeItemsToday: EarnFirstIncomeItem[]; // Itemized list of all incomes earned today
-  shiftWageToday: number;           // Subtotal of shift / wage earnings
-  otherIncomeToday: number;         // Subtotal of freelance, gig, gift, tab settlement, etc.
-  basePocketAllowance: number;
-  carriedRollover: number;         // surplus (+) or deficit (-) from previous days
-  totalAllowanceToday: number;     // base + carriedRollover
-  spentToday: number;              // non-due expenses today
-  remainingToday: number;          // totalAllowanceToday - spentToday
-  duesShieldToday: number;         // amount locked away for upcoming dues today
-  restDayCushion: number;          // accumulated surplus buffer for off-days
-  weeklyNetRollover: number;       // net surplus/deficit this week
-  monthlyNetRollover: number;      // net surplus/deficit this month
-  isRestDay: boolean;
+  totalLiquidFunds: number;           // cashInHand + accountBalance
+  expectedWagePerShift: number;
+  plannedWorkShiftsThisWeek: number;
+  shiftsCompletedThisWeek: number;
+  shiftsRemainingThisWeek: number;
+  earnedThisWeek: number;
+  remainingExpectedIncome: number;
+  totalObligationsLocked: number;     // total pending dues + you_owe tabs
+  pendingDuesCount: number;
+  pendingDuesTotal: number;
+  pendingDuesList: Array<{ id: string; title: string; amount: number; dueDayOfMonth: number; category: string }>;
+  pendingTabsCount: number;
+  pendingTabsTotal: number;
+  pendingTabsList: Array<{ id: string; personName: string; amount: number; description: string; type: TabType }>;
+  netWeeklySafePool: number;          // liquid + remainingExpected - obligations
+  daysRemainingInWeek: number;        // 1 to 7
+  dailyTargetToday: number;           // netWeeklySafePool / daysRemaining
+  spentToday: number;
+  remainingSafeToday: number;         // dailyTargetToday - spentToday
+  safeLeftToday?: number;             // alias for remainingSafeToday
+  isOverspentToday: boolean;
+  overspentAmount: number;
+  percentUsedToday: number;
+  // Legacy compatibility fields
+  remainingToday: number;
+  totalAllowanceToday: number;
+  totalIncomeToday: number;
   percentUsed: number;
-  nextUrgentDue: {
-    id: string;
-    title: string;
-    daysLeft: number;
-    amount: number;
-    dailyUrgencyCut: number;
-  } | null;
+  isRestDay: boolean;
+  incomeCountToday: number;
+  workFactor: number;
+  carriedRollover: number;
+  dailyDueHoldback: number;
+  effectiveIncomeToday: number;
+  nextDue?: any;
+  incomeList?: any[];
 }
 
-// Earn-First AI Copilot Chat Types
+export type SafeSpendState = WeeklySafeSpendState;
+export type EarnFirstState = WeeklySafeSpendState;
+
+// AI Copilot Chat Types
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -255,42 +278,39 @@ export interface ChatMessage {
   timestamp: number;
 }
 
-export interface EarnFirstChatContext {
+export interface WeeklySafeSpendChatContext {
   date: string;
-  remainingToday: number;
-  totalAllowanceToday: number;
-  basePocketAllowance: number;
+  dayOfWeek: string;
+  remainingSafeToday: number;
+  dailyTargetToday: number;
   spentToday: number;
-  duesShieldToday: number;
-  restDayCushion: number;
-  carriedRollover: number;
-  weeklyNetRollover: number;
-  monthlyNetRollover: number;
-  isRestDay: boolean;
-  percentUsed: number;
-  totalIncomeToday: number;
-  incomeCountToday: number;
-  incomeItemsToday: EarnFirstIncomeItem[];
-  nextUrgentDue: {
-    title: string;
-    amount: number;
-    daysLeft: number;
-    dailyUrgencyCut: number;
-  } | null;
+  isOverspentToday: boolean;
+  overspentAmount: number;
+  netWeeklySafePool: number;
+  daysRemainingInWeek: number;
+  totalLiquidFunds: number;
   wallets: {
     cashInHand: number;
     accountBalance: number;
   };
-  upcomingDues: Array<{
-    title: string;
-    amount: number;
-    dueDayOfMonth: number;
-    status: string;
-  }>;
-  config: {
-    expectedDailyWage: number;
-    workFactor: number;
-    defaultWallet: string;
-    duesReserveCapPercent?: number;
+  workSchedule: {
+    expectedWagePerShift: number;
+    plannedWorkShiftsThisWeek: number;
+    shiftsCompletedThisWeek: number;
+    shiftsRemainingThisWeek: number;
+    earnedThisWeek: number;
+    remainingExpectedIncome: number;
+  };
+  obligations: {
+    totalLocked: number;
+    pendingDuesCount: number;
+    pendingDuesTotal: number;
+    pendingDues: Array<{ title: string; amount: number; dueDayOfMonth: number; category: string }>;
+    pendingTabsCount: number;
+    pendingTabsTotal: number;
+    tabsYouOwe: Array<{ personName: string; amount: number; description: string }>;
+    tabsOwedToYou: Array<{ personName: string; amount: number; description: string }>;
   };
 }
+
+export type EarnFirstChatContext = WeeklySafeSpendChatContext;

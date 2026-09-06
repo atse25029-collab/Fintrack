@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { EarnFirstChatContext } from '@/lib/types';
+import { WeeklySafeSpendChatContext } from '@/lib/types';
 
 interface ChatPayload {
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
-  context: EarnFirstChatContext;
+  context: WeeklySafeSpendChatContext;
   customApiKey?: string;
 }
 
@@ -34,9 +34,9 @@ export async function POST(req: NextRequest) {
       process.env.GOOGLE_API_KEY ||
       process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
-    // If no API key is available, generate an intelligent mathematical fallback response
+    // If no API key is available, generate a warm, human-like deterministic response
     if (!apiKey) {
-      const fallbackReply = generateSmartFallbackReply(latestUserMessage, context);
+      const fallbackReply = generateHumanFallbackReply(latestUserMessage, context);
       return NextResponse.json({
         success: true,
         reply: fallbackReply,
@@ -46,56 +46,77 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Build the system prompt with live Earn-First financial variables
-    const systemPrompt = `You are FinTrack's Earn-First AI Financial Copilot — an empathetic, hyper-accurate personal money strategist designed for daily wage earners, freelancers, and smart budgeters.
+    // Build the system prompt with vibrant, human personality and complete financial awareness
+    const duesListStr =
+      context.obligations.pendingDues && context.obligations.pendingDues.length > 0
+        ? context.obligations.pendingDues
+            .map((d) => `• ${d.title}: ₹${d.amount} (Due day ${d.dueDayOfMonth} of month, ${d.category})`)
+            .join('\n')
+        : '• No pending dues this week! All clear.';
 
-LIVE FINANCIAL CONTEXT FOR TODAY (${context.date}):
-- Safe Left to Spend Today: ₹${context.remainingToday}
-- Today's Total Allowance: ₹${context.totalAllowanceToday} (Base Pocket Inflow: ₹${context.basePocketAllowance}, Carried Rollover: ${context.carriedRollover >= 0 ? '+' : ''}₹${context.carriedRollover})
-- Spent Today (Non-Due Expenses): ₹${context.spentToday}
-- Percent of Safe Limit Used: ${context.percentUsed}%
-- Total Inflows/Earnings Today: ₹${context.totalIncomeToday} across ${context.incomeCountToday || 0} stream(s)
-- Itemized Inflows: ${
-      context.incomeItemsToday && context.incomeItemsToday.length > 0
-        ? context.incomeItemsToday
-            .map((i) => `"${i.description}": +₹${i.amount} (${i.category}, via ${i.paymentMethod})`)
-            .join(', ')
-        : 'No earnings logged yet today'
-    }
-- Dues Shield Reserved Today: ₹${context.duesShieldToday} (protects rent/fixed bills from being spent)
-- Rest-Day Cushion Buffer: ₹${context.restDayCushion} (accumulated surplus for off-days)
-- Weekly Net Rollover: ${context.weeklyNetRollover >= 0 ? '+' : ''}₹${context.weeklyNetRollover}
-- Monthly Net Rollover: ${context.monthlyNetRollover >= 0 ? '+' : ''}₹${context.monthlyNetRollover}
-- Today is Rest Day: ${context.isRestDay ? 'YES (Rest Mode active)' : 'NO (Work day)'}
-- Next Urgent Due: ${
-      context.nextUrgentDue
-        ? `${context.nextUrgentDue.title} (₹${context.nextUrgentDue.amount}) due in ${context.nextUrgentDue.daysLeft} days (Daily urgency cut: ₹${context.nextUrgentDue.dailyUrgencyCut})`
-        : 'None pending this week'
-    }
-- Current Wallets: Cash in Hand: ₹${context.wallets?.cashInHand ?? 0}, Bank/UPI: ₹${context.wallets?.accountBalance ?? 0} (Total Liquid Cash: ₹${
-      (context.wallets?.cashInHand ?? 0) + (context.wallets?.accountBalance ?? 0)
-    })
-- Settings: Expected Daily Shift Wage: ₹${context.config?.expectedDailyWage ?? 200}, Work Factor: ${Math.round(
-      (context.config?.workFactor ?? 0.7) * 100
-    )}%, Dues Reserve Cap: ${context.config?.duesReserveCapPercent || 40}%
+    const youOweStr =
+      context.obligations.tabsYouOwe && context.obligations.tabsYouOwe.length > 0
+        ? context.obligations.tabsYouOwe
+            .map((t) => `• You owe ${t.personName}: ₹${t.amount} ("${t.description}")`)
+            .join('\n')
+        : '• You have zero friend debts.';
 
-CORE BEHAVIORAL DIRECTIVES:
-1. Ground every answer in the live numbers above. Always use Indian Rupee (₹) formatting.
-2. Purchase Affordability ("Can I buy ₹X?"):
-   - Compare ₹X directly to "Safe Left to Spend Today" (₹${context.remainingToday}).
-   - If ₹X <= remainingToday: Give a clear "Yes!" and show what will remain.
-   - If ₹X > remainingToday: Clearly state they are short. Explain that spending it now causes a deficit that rollover penalizes tomorrow, OR tell them how much additional income/shift they need to log first to afford it cleanly.
-3. Rest Day Advice ("Can I take tomorrow off?"):
-   - Check the Rest-Day Cushion (₹${context.restDayCushion}) and Weekly Net (₹${context.weeklyNetRollover}).
-   - Reassure the user that the attendance model anticipates rest days without guilt.
-4. Dues Shield Explanation:
-   - Explain that the Dues Shield automatically protects upcoming bills so they don't face an emergency when rent or utility due dates arrive.
-5. Tone: Concise, encouraging, street-smart, realistic. Use short paragraphs or quick bullet points.`;
+    const owedToYouStr =
+      context.obligations.tabsOwedToYou && context.obligations.tabsOwedToYou.length > 0
+        ? context.obligations.tabsOwedToYou
+            .map((t) => `• ${t.personName} owes you: ₹${t.amount} ("${t.description}")`)
+            .join('\n')
+        : '• Nobody owes you money currently.';
+
+    const systemPrompt = `You are FinTrack Copilot — the user's street-smart, witty, empathetic, and encouraging personal money partner.
+You are NOT a cold, sterile accountant or a calculator script. You NEVER output robotic form letters (like "- Item Cost: ₹X, - Safe Left: ₹Y"). You talk in natural, conversational sentences like a trusted, financially savvy friend who knows their exact money situation and wants them to thrive.
+
+CURRENT LIVE FINANCIAL REALITY FOR TODAY (${context.date}, ${context.dayOfWeek || 'This Week'}):
+1. REAL LIQUID CASH IN HAND & BANK:
+   - Cash in Hand: ₹${context.wallets.cashInHand}
+   - Bank / UPI Balance: ₹${context.wallets.accountBalance}
+   - Total Liquid Money Right Now: ₹${context.totalLiquidFunds}
+
+2. WORK SCHEDULE & ESTIMATED EARNINGS THIS WEEK:
+   - Standard Wage Rate Per Shift: ₹${context.workSchedule.expectedWagePerShift}
+   - Planned Work Shifts This Week: ${context.workSchedule.plannedWorkShiftsThisWeek} shifts
+   - Shifts Already Completed Since Monday: ${context.workSchedule.shiftsCompletedThisWeek} shifts (Earned so far: ₹${context.workSchedule.earnedThisWeek})
+   - Remaining Planned Shifts To Work: ${context.workSchedule.shiftsRemainingThisWeek} shifts
+   - Estimated Remaining Work Earnings Yet To Be Earned: ₹${context.workSchedule.remainingExpectedIncome}
+
+3. LOCKED OBLIGATIONS (RING-FENCED SO USER NEVER SHORTFALLS BILLS OR FRIENDS):
+   - Total Locked Obligations: ₹${context.obligations.totalLocked}
+   - All Pending Dues (${context.obligations.pendingDuesCount} dues, ₹${context.obligations.pendingDuesTotal}):
+${duesListStr}
+   - Friend Tabs You Owe:
+${youOweStr}
+   - Money Friends Owe You:
+${owedToYouStr}
+
+4. WEEKLY DISCRETIONARY POOL & TODAY'S SAFE LIMIT:
+   - Net Weekly Safe Pool: ₹${context.netWeeklySafePool} (Calculated as Liquid ₹${context.totalLiquidFunds} + Est. Work Income ₹${context.workSchedule.remainingExpectedIncome} - Locked Obligations ₹${context.obligations.totalLocked})
+   - Days Remaining in Current Week: ${context.daysRemainingInWeek} days (including today)
+   - Today's Target Allowance: ₹${context.dailyTargetToday}
+   - Already Spent Today: ₹${context.spentToday}
+   - Safe Left To Spend Today: ₹${Math.max(0, context.remainingSafeToday)} ${
+      context.isOverspentToday ? `(Overspent today by ₹${context.overspentAmount})` : ''
+    }
+
+CONVERSATIONAL RULES & PERSONALITY GUIDELINES:
+1. TALK LIKE A HUMAN: Use natural, punchy, conversational prose with warmth and relatable humor. Avoid repeating standard bulleted tables.
+2. AFFORDABILITY QUESTIONS ("Can I buy ₹X?", "Can I afford dinner tonight?"):
+   - Directly analyze the purchase in context of their current liquid cash, their locked bills/debts, and remaining work shifts.
+   - If affordable: Celebrate and give the green light with confidence (*"Go for it! You've got ₹${context.remainingSafeToday} safe to spend today..."*).
+   - If unaffordable or risky: Give a friendly, candid reality-check without being preachy. Tell them exactly which bills or friend debts would be at risk, and remind them that working their next planned shift (+₹${context.workSchedule.expectedWagePerShift}) will unlock the purchase cleanly.
+3. REST-DAY & DAY-OFF QUESTIONS ("Can I take tomorrow off?"):
+   - Look at their shift progress (${context.workSchedule.shiftsCompletedThisWeek} of ${context.workSchedule.plannedWorkShiftsThisWeek} shifts done).
+   - Calculate how dropping a shift impacts the weekly pool and explain it encouragingly.
+4. OBLIGATIONS & DEBT DIAGNOSTICS:
+   - If asked about dues or tabs, cite the specific names, amounts, and dates from the list above.
+5. KEEP IT SNAPPY: 2-4 short, lively paragraphs. Use emojis thoughtfully. Always format currency in Indian Rupees (₹).`;
 
     // Format previous messages for Gemini API
     const contents = [];
-
-    // Include recent conversational turns (last 6 messages max)
     const recentMessages = messages.slice(-6);
     for (const msg of recentMessages) {
       contents.push({
@@ -110,8 +131,8 @@ CORE BEHAVIORAL DIRECTIVES:
       },
       contents: contents,
       generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 600,
+        temperature: 0.6, // slightly higher temperature for livelier, more human conversational flair
+        maxOutputTokens: 500,
       },
     };
 
@@ -127,8 +148,7 @@ CORE BEHAVIORAL DIRECTIVES:
     if (!response.ok) {
       const errText = await response.text();
       console.warn('Gemini 2.5 Flash API error response:', errText);
-      // Fall back to rule-based analysis
-      const fallbackReply = generateSmartFallbackReply(latestUserMessage, context);
+      const fallbackReply = generateHumanFallbackReply(latestUserMessage, context);
       return NextResponse.json({
         success: true,
         reply: fallbackReply,
@@ -141,7 +161,7 @@ CORE BEHAVIORAL DIRECTIVES:
     const candidateText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!candidateText) {
-      const fallbackReply = generateSmartFallbackReply(latestUserMessage, context);
+      const fallbackReply = generateHumanFallbackReply(latestUserMessage, context);
       return NextResponse.json({
         success: true,
         reply: fallbackReply,
@@ -155,7 +175,7 @@ CORE BEHAVIORAL DIRECTIVES:
       isFallback: false,
     });
   } catch (error: any) {
-    console.error('Earn-First AI Copilot API error:', error);
+    console.error('Safe Spend AI Copilot API error:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to process AI Copilot request' },
       { status: 500 }
@@ -163,46 +183,63 @@ CORE BEHAVIORAL DIRECTIVES:
   }
 }
 
-// Smart deterministic fallback when API key is missing or offline
-function generateSmartFallbackReply(
+// Warm, engaging, human-like fallback responses when offline or without API key
+function generateHumanFallbackReply(
   userQuery: string,
-  context: EarnFirstChatContext
+  context: WeeklySafeSpendChatContext
 ): string {
   const query = userQuery.toLowerCase();
-  const safeLeft = Math.max(0, context.remainingToday);
+  const safeLeft = Math.max(0, context.remainingSafeToday);
+  const shiftWage = context.workSchedule.expectedWagePerShift || 300;
+  const liquid = context.totalLiquidFunds;
+  const locked = context.obligations.totalLocked;
 
   // 1. Purchase Affordability Question
   const amountMatch = query.match(/(?:₹|rs\.?|inr)?\s*(\d+)/i);
-  if (amountMatch && (query.includes('afford') || query.includes('buy') || query.includes('spend') || query.includes('dinner') || query.includes('cost'))) {
+  if (
+    amountMatch &&
+    (query.includes('afford') ||
+      query.includes('buy') ||
+      query.includes('spend') ||
+      query.includes('dinner') ||
+      query.includes('cost') ||
+      query.includes('meal'))
+  ) {
     const cost = parseInt(amountMatch[1], 10);
     if (cost <= safeLeft) {
       const remainder = safeLeft - cost;
-      return `✅ **Yes, you can comfortably afford this!**\n\n- **Item Cost:** ₹${cost}\n- **Safe Left Today:** ₹${safeLeft}\n- **Remaining After Purchase:** ₹${remainder}\n\nYour purchase is 100% within your safe daily allowance, and your upcoming bills (Dues Shield: ₹${context.duesShieldToday}) remain fully protected.`;
+      return `Go for it! 🎉 You've got ₹${safeLeft} safe to spend today, so dropping ₹${cost} fits comfortably in your budget.\n\nEven after this, you'll still have ₹${remainder} cushion today, and all ₹${locked} of your upcoming dues and friend debts stay 100% protected. Enjoy!`;
     } else {
       const deficit = cost - safeLeft;
-      const expectedShift = context.config?.expectedDailyWage || 200;
-      return `⚠️ **Caution: Spending ₹${cost} will exceed your safe allowance today.**\n\n- **Safe Left Today:** ₹${safeLeft}\n- **Shortfall:** ₹${deficit}\n\nIf you buy this now, the ₹${deficit} overspend will roll over into tomorrow's allowance. **Pro Tip:** Log a quick half-shift (+₹${Math.round(
-        expectedShift / 2
-      )}) or an inflow first to bring your safe spend into the green!`;
+      return `Hold up for a second! 🛑 You only have ₹${safeLeft} safe to spend today, so spending ₹${cost} will put you ₹${deficit} in the red.\n\nRemember, you've got ₹${locked} locked away for your bills and debts. If you buy this now, tomorrow's safe spend will take a hit. **Pro-move**: You still have ${context.workSchedule.shiftsRemainingThisWeek} planned shifts this week (+₹${shiftWage} each). Knock out your next shift first, and this purchase will be completely guilt-free!`;
     }
   }
 
-  // 2. Rest Day Question
-  if (query.includes('rest') || query.includes('off') || query.includes('holiday') || query.includes('leave')) {
-    if (context.restDayCushion > 100 || context.weeklyNetRollover >= 0) {
-      const workPct = Math.round((context.config?.workFactor ?? 0.7) * 100);
-      return `🛋️ **Yes, you can safely take time off!**\n\n- **Rest-Day Cushion Fund:** ₹${context.restDayCushion}\n- **Weekly Net Rollover:** ${context.weeklyNetRollover >= 0 ? '+' : ''}₹${context.weeklyNetRollover}\n\nThe Earn-First engine factors in a ${workPct}% attendance schedule so your off-days are pre-cushioned. Enjoy your rest without guilt!`;
+  // 2. Day off / Rest day planning
+  if (
+    query.includes('rest') ||
+    query.includes('off') ||
+    query.includes('holiday') ||
+    query.includes('leave') ||
+    query.includes('tomorrow')
+  ) {
+    if (context.workSchedule.shiftsCompletedThisWeek >= 3 || context.netWeeklySafePool > 1000) {
+      return `You've earned it! 🛋️ You've already knocked out ${context.workSchedule.shiftsCompletedThisWeek} shifts this week (₹${context.workSchedule.earnedThisWeek} earned). Even if you take tomorrow off, your remaining weekly safe pool sits at a healthy ₹${context.netWeeklySafePool}.\n\nKick back, recharge, and don't sweat it. Your bills are covered!`;
     } else {
-      return `⚠️ **Your cushion is currently lean:**\n\n- **Cushion Fund:** ₹${context.restDayCushion}\n- **Weekly Rollover:** ₹${context.weeklyNetRollover}\n\nYou can still rest, but keep expenses strictly under ₹${safeLeft} so you don't accumulate a deficit heading into next week.`;
+      return `You *can* take tomorrow off, but keep it lean! 👀 You've completed ${context.workSchedule.shiftsCompletedThisWeek} of your ${context.workSchedule.plannedWorkShiftsThisWeek} planned shifts so far. Dropping tomorrow's shift means your daily safe spend will tighten up from ₹${context.dailyTargetToday} to about ₹${Math.max(
+        0,
+        Math.round((context.netWeeklySafePool - shiftWage) / Math.max(1, context.daysRemainingInWeek - 1))
+      )} for the rest of the week.\n\nIf you take the day off, just watch non-essential expenses!`;
     }
   }
 
-  // 3. Safe Spend Diagnostics
-  if (query.includes('why') || query.includes('how') || query.includes('explain') || query.includes('calculate')) {
-    const expectedShift = context.config?.expectedDailyWage || 200;
-    return `📊 **Earn-First Diagnostic Breakdown:**\n\n1. **Total Inflows Today:** +₹${context.totalIncomeToday} (${context.incomeCountToday} stream(s))\n2. **Dues Shield Reserved:** -₹${context.duesShieldToday} (locked away for bills)\n3. **Pocket Allowance:** ₹${context.basePocketAllowance}\n4. **Carried Rollover:** ${context.carriedRollover >= 0 ? '+' : ''}₹${context.carriedRollover}\n5. **Spent Today:** -₹${context.spentToday}\n\n👉 **Safe Left Today:** **₹${safeLeft}**\n\nTo increase your safe spend, tap "+₹${expectedShift} Shift" or "+ Log Inflow" on your home screen.`;
+  // 3. Dues & Debt breakdown
+  if (query.includes('due') || query.includes('tab') || query.includes('debt') || query.includes('lock')) {
+    const dueCount = context.obligations.pendingDuesCount;
+    const tabCount = context.obligations.pendingTabsCount;
+    return `Here's your debt snapshot 🔒: We're ring-fencing a total of **₹${locked}** right now.\n\n- **Monthly Dues (${dueCount})**: Totaling ₹${context.obligations.pendingDuesTotal}\n- **Friend Tabs You Owe (${tabCount})**: Totaling ₹${context.obligations.pendingTabsTotal}\n\nThis money is completely sealed off from your liquid funds (₹${liquid}), so you never have to panic when due dates land!`;
   }
 
-  // 4. Default Summary
-  return `🤖 **Earn-First Copilot:**\n\n- **Safe Left to Spend Today:** ₹${safeLeft}\n- **Earned Today:** ₹${context.totalIncomeToday}\n- **Dues Shielded:** ₹${context.duesShieldToday}\n- **Rest Cushion:** ₹${context.restDayCushion}\n\nAsk me anything like *"Can I afford a ₹180 dinner?"*, *"Can I take tomorrow off?"*, or *"Why is my safe spend ₹${safeLeft}?"*!`;
+  // 4. General week check-in
+  return `Hey! Here's how your week is shaping up 📊:\n\nYou've got **₹${liquid}** total in your accounts. After locking away **₹${locked}** for your bills and debts, plus factoring in your **${context.workSchedule.shiftsRemainingThisWeek} planned shifts** left this week (+₹${context.workSchedule.remainingExpectedIncome}), your weekly safe discretionary pool is **₹${context.netWeeklySafePool}**.\n\nThat gives you **₹${safeLeft}** safe to spend today! What are you planning to do?`;
 }
