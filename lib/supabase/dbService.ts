@@ -192,8 +192,8 @@ export async function syncWalletsToCloud(wallets: WalletBalances) {
     await client.from('wallets').upsert(
       {
         user_id: userId,
-        cash_in_hand: wallets.cashInHand,
-        account_balance: wallets.accountBalance,
+        cash_in_hand: Number(wallets.cashInHand) || 0,
+        account_balance: Number(wallets.accountBalance) || 0,
         last_updated: wallets.lastUpdated || Date.now(),
       },
       { onConflict: 'user_id' }
@@ -351,9 +351,9 @@ export async function fetchAllCloudData(): Promise<{
 
     if (walletRes.data) {
       result.wallets = {
-        cashInHand: Number(walletRes.data.cash_in_hand),
-        accountBalance: Number(walletRes.data.account_balance),
-        lastUpdated: Number(walletRes.data.last_updated),
+        cashInHand: isNaN(Number(walletRes.data.cash_in_hand)) ? 0 : Number(walletRes.data.cash_in_hand),
+        accountBalance: isNaN(Number(walletRes.data.account_balance)) ? 0 : Number(walletRes.data.account_balance),
+        lastUpdated: Number(walletRes.data.last_updated) || Date.now(),
       };
     }
 
@@ -456,9 +456,9 @@ export async function uploadLocalDataToCloud(data: {
     const { error: walletErr } = await client.from('wallets').upsert(
       {
         user_id: userId,
-        cash_in_hand: data.wallets.cashInHand,
-        account_balance: data.wallets.accountBalance,
-        last_updated: data.wallets.lastUpdated || Date.now(),
+        cash_in_hand: Number(data.wallets?.cashInHand) || 0,
+        account_balance: Number(data.wallets?.accountBalance) || 0,
+        last_updated: data.wallets?.lastUpdated || Date.now(),
       },
       { onConflict: 'user_id' }
     );

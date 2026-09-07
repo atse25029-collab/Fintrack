@@ -175,8 +175,11 @@ export default function HomePage() {
               setLocalTabs(cloudData.tabs);
             }
             if (cloudData.wallets) {
-              setWallets(cloudData.wallets);
-              setLocalWallets(cloudData.wallets);
+              const localW = getLocalWallets();
+              if ((cloudData.wallets.lastUpdated || 0) >= (localW.lastUpdated || 0)) {
+                setWallets(cloudData.wallets);
+                setLocalWallets(cloudData.wallets);
+              }
             }
             if (cloudData.presets && cloudData.presets.length > 0) {
               setPresets(cloudData.presets);
@@ -219,8 +222,11 @@ export default function HomePage() {
           setLocalTabs(cloudData.tabs);
         }
         if (cloudData.wallets) {
-          setWallets(cloudData.wallets);
-          setLocalWallets(cloudData.wallets);
+          const localW = getLocalWallets();
+          if ((cloudData.wallets.lastUpdated || 0) >= (localW.lastUpdated || 0)) {
+            setWallets(cloudData.wallets);
+            setLocalWallets(cloudData.wallets);
+          }
         }
         if (cloudData.presets && cloudData.presets.length > 0) {
           setPresets(cloudData.presets);
@@ -306,7 +312,14 @@ export default function HomePage() {
       method: PaymentMethod,
       direction: 'apply' | 'revert'
     ): WalletBalances => {
-      const isCash = method === 'Cash';
+      const isCash =
+        method === 'Cash' ||
+        (typeof method === 'string' && method.trim().toLowerCase().includes('cash'));
+      const numAmount = Math.max(
+        0,
+        typeof amount === 'number' && !isNaN(amount) ? amount : parseFloat(String(amount)) || 0
+      );
+
       // If applying expense: subtract; if reverting expense: add
       // If applying income: add; if reverting income: subtract
       let multiplier = 0;
@@ -316,19 +329,29 @@ export default function HomePage() {
         multiplier = direction === 'apply' ? 1 : -1;
       }
 
-      const delta = amount * multiplier;
+      const delta = numAmount * multiplier;
+
+      const safeCash =
+        typeof prevWallets?.cashInHand === 'number' && !isNaN(prevWallets.cashInHand)
+          ? prevWallets.cashInHand
+          : Number(prevWallets?.cashInHand) || 0;
+      const safeAccount =
+        typeof prevWallets?.accountBalance === 'number' && !isNaN(prevWallets.accountBalance)
+          ? prevWallets.accountBalance
+          : Number(prevWallets?.accountBalance) || 0;
 
       const nextWallets = {
         cashInHand: isCash
-          ? Math.max(0, Math.round((prevWallets.cashInHand + delta) * 100) / 100)
-          : prevWallets.cashInHand,
+          ? Math.max(0, Math.round((safeCash + delta) * 100) / 100)
+          : safeCash,
         accountBalance: !isCash
-          ? Math.max(0, Math.round((prevWallets.accountBalance + delta) * 100) / 100)
-          : prevWallets.accountBalance,
+          ? Math.max(0, Math.round((safeAccount + delta) * 100) / 100)
+          : safeAccount,
         lastUpdated: Date.now(),
       };
 
       setLocalWallets(nextWallets);
+      syncWalletsToCloud(nextWallets);
       fetch('/api/wallets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -344,15 +367,15 @@ export default function HomePage() {
   const syncFullStateToCloud = useCallback(
     (overrides?: Partial<FullAppData>) => {
       triggerImmediateCloudUpload({
-        transactions: overrides?.transactions ?? transactions,
-        wallets: overrides?.wallets ?? wallets,
-        tabs: overrides?.tabs ?? tabs,
-        dues: overrides?.dues ?? dues,
-        presets: overrides?.presets ?? presets,
-        budget: overrides?.budget ?? budget,
+        transactions: overrides?.transactions ?? getLocalTransactions(),
+        wallets: overrides?.wallets ?? getLocalWallets(),
+        tabs: overrides?.tabs ?? getLocalTabs(),
+        dues: overrides?.dues ?? getLocalDues(),
+        presets: overrides?.presets ?? getLocalQuickPresets(),
+        budget: overrides?.budget ?? getLocalBudget(),
       });
     },
-    [transactions, wallets, tabs, dues, presets, budget]
+    []
   );
 
   // --- Transactions Handlers ---
@@ -360,6 +383,7 @@ export default function HomePage() {
     (data: Partial<Transaction>) => {
       const realTime = getExactRealTime();
       const now = Date.now();
+      let updatedWallets: WalletBalances = getLocalWallets();
 
       setTransactions((prev) => {
         let updated: Transaction[];
@@ -370,8 +394,9 @@ export default function HomePage() {
           if (existing) {
             // Revert old impact on wallet
             setWallets((w) => {
+              const currentW = w || getLocalWallets();
               const reverted = applyWalletImpact(
-                w,
+                currentW,
                 existing.amount,
                 existing.type,
                 existing.paymentMethod,
@@ -391,7 +416,8 @@ export default function HomePage() {
 
               const newType: TransactionType = isExplicitInflow ? 'income' : (data.type || existing.type);
               const newMethod = data.paymentMethod || existing.paymentMethod;
-              return applyWalletImpact(reverted, newAmount, newType, newMethod, 'apply');
+              updatedWallets = applyWalletImpact(reverted, newAmount, newType, newMethod, 'apply');
+              return updatedWallets;
             });
           }
 
@@ -436,7 +462,7 @@ export default function HomePage() {
           const newTx: Transaction = {
             id: `tx-${now}-${Math.random().toString(36).substring(2, 7)}`,
             type: resolvedType,
-            amount: data.amount || 0,
+            amount: typeof data.amount === 'number' ? data.amount : parseFloat(String(data.amount)) || 0,
             category: data.category || (resolvedType === 'income' ? 'Other Inflows' : 'Chai & Snacks'),
             description: data.description || (resolvedType === 'income' ? 'Inflow' : ''),
             date: data.date || realTime.date,
@@ -449,9 +475,11 @@ export default function HomePage() {
           };
 
           // Apply wallet impact
-          setWallets((w) =>
-            applyWalletImpact(w, newTx.amount, newTx.type, newTx.paymentMethod, 'apply')
-          );
+          setWallets((w) => {
+            const currentW = w || getLocalWallets();
+            updatedWallets = applyWalletImpact(currentW, newTx.amount, newTx.type, newTx.paymentMethod, 'apply');
+            return updatedWallets;
+          });
 
           updated = [newTx, ...prev];
         }
@@ -467,8 +495,9 @@ export default function HomePage() {
         }).catch(() => {});
 
         // Instant cloud upload on user interaction
+        const freshWallets = updatedWallets || getLocalWallets();
         setTimeout(() => {
-          syncFullStateToCloud({ transactions: updated });
+          syncFullStateToCloud({ transactions: updated, wallets: freshWallets });
         }, 50);
 
         return updated;
@@ -551,18 +580,18 @@ export default function HomePage() {
     (id: string) => {
       setTransactions((prev) => {
         const toDelete = prev.find((t) => t.id === id);
-        let updatedWallets = wallets;
+        let updatedWallets = getLocalWallets();
         if (toDelete) {
           // Revert impact on wallet
           setWallets((w) => {
+            const currentW = w || getLocalWallets();
             updatedWallets = applyWalletImpact(
-              w,
+              currentW,
               toDelete.amount,
               toDelete.type,
               toDelete.paymentMethod,
               'revert'
             );
-            syncWalletsToCloud(updatedWallets);
             return updatedWallets;
           });
         }
@@ -583,7 +612,7 @@ export default function HomePage() {
         return filtered;
       });
     },
-    [applyWalletImpact, wallets, syncFullStateToCloud]
+    [applyWalletImpact, syncFullStateToCloud]
   );
 
   const handleSaveBudget = useCallback(
@@ -753,14 +782,14 @@ export default function HomePage() {
         // Adjust wallet balance directly without logging a transaction entry
         setWallets((w) => {
           const isIncome = tab.type === 'owed_to_you';
+          const currentW = w || getLocalWallets();
           const updatedWallets = applyWalletImpact(
-            w,
+            currentW,
             tab.amount,
             isIncome ? 'income' : 'expense',
             paymentMethod,
             'apply'
           );
-          syncWalletsToCloud(updatedWallets);
           setTimeout(() => {
             syncFullStateToCloud({ wallets: updatedWallets });
           }, 50);
@@ -1008,8 +1037,11 @@ export default function HomePage() {
         setLocalTransactions(cloudData.transactions);
       }
       if (cloudData.wallets) {
-        setWallets(cloudData.wallets);
-        setLocalWallets(cloudData.wallets);
+        const localW = getLocalWallets();
+        if ((cloudData.wallets.lastUpdated || 0) >= (localW.lastUpdated || 0)) {
+          setWallets(cloudData.wallets);
+          setLocalWallets(cloudData.wallets);
+        }
       }
       if (cloudData.tabs) {
         setTabs(cloudData.tabs);
