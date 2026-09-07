@@ -8,9 +8,6 @@ import WalletAdjustModal from '@/components/wallets/WalletAdjustModal';
 import QuickAddBar from '@/components/daily/QuickAddBar';
 import QuickPresetModal from '@/components/daily/QuickPresetModal';
 import DailyTimeline from '@/components/daily/DailyTimeline';
-import FinancialSummary from '@/components/dashboard/FinancialSummary';
-import SpendingChart from '@/components/dashboard/SpendingChart';
-import CategoryBreakdown from '@/components/dashboard/CategoryBreakdown';
 import BudgetTargetModal from '@/components/dashboard/BudgetTargetModal';
 import TransactionModal from '@/components/transactions/TransactionModal';
 import TransactionList from '@/components/transactions/TransactionList';
@@ -23,15 +20,9 @@ import MonthlyDuesManager from '@/components/dues/MonthlyDuesManager';
 import MonthlyDueModal from '@/components/dues/MonthlyDueModal';
 import AnalyticsView from '@/components/analytics/AnalyticsView';
 import ProfileSection from '@/components/profile/ProfileSection';
-import DynamicSafeSpendCard from '@/components/daily/DynamicSafeSpendCard';
 import PasteSmsModal from '@/components/daily/PasteSmsModal';
 import ReceiptScanModal from '@/components/daily/ReceiptScanModal';
 import MonthlyStatementModal from '@/components/analytics/MonthlyStatementModal';
-import {
-  getSafeSpendConfig,
-  setSafeSpendConfig,
-  computeDynamicSafeSpendState,
-} from '@/lib/safeSpend/safeSpendEngine';
 import { getStoredTheme, applyTheme } from '@/lib/theme/themeService';
 import { ParsedSmsTransaction } from '@/lib/parser/smsParser';
 import { checkAndNotifyUpcomingDuesAndTabs } from '@/lib/notifications/notificationService';
@@ -42,8 +33,6 @@ import {
   updateLocalChecksum,
   FullAppData,
 } from '@/lib/supabase/realtimeSync';
-import EarnFirstChatModal from '@/components/ai/EarnFirstChatModal';
-import EarnFirstChatTrigger from '@/components/ai/EarnFirstChatTrigger';
 import {
   fetchAllCloudData,
   syncTransactionToCloud,
@@ -67,11 +56,8 @@ import {
   TransactionType,
   WalletBalances,
   QuickPreset,
-  DynamicSafeSpendConfig,
-  DynamicSafeSpendState,
-  WeeklySafeSpendConfig,
-  WeeklySafeSpendState,
 } from '@/lib/types';
+
 
 import {
   INITIAL_TRANSACTIONS,
@@ -134,31 +120,17 @@ export default function HomePage() {
   const [isDueModalOpen, setIsDueModalOpen] = useState(false);
   const [editingDue, setEditingDue] = useState<MonthlyDue | null>(null);
 
-  // Dynamic Runway Safe Spend & New Feature Modals State
-  const [safeSpendConfig, setSafeSpendConfigState] = useState<DynamicSafeSpendConfig>(getSafeSpendConfig());
-  const [safeSpendTick, setSafeSpendTick] = useState(0);
+  // Modals State
   const [isPasteSmsOpen, setIsPasteSmsOpen] = useState(false);
   const [isReceiptScanOpen, setIsReceiptScanOpen] = useState(false);
   const [isStatementOpen, setIsStatementOpen] = useState(false);
-  const [isChatModalOpen, setIsChatModalOpen] = useState(false);
 
-  // Compute live Dynamic Runway Safe Spend State from wallets, dues, tabs, transactions, and config
-  const safeSpendState = useMemo(() => {
-    return computeDynamicSafeSpendState(wallets, dues, tabs, transactions, safeSpendConfig);
-  }, [wallets, dues, tabs, transactions, safeSpendConfig, safeSpendTick]);
 
   // Initial load from storage and background sync
   useEffect(() => {
-    // 0. Initialize theme & Safe Spend configuration
+    // 0. Initialize theme
     applyTheme(getStoredTheme());
-    setSafeSpendConfigState(getSafeSpendConfig());
 
-    const handleSafeSpendChanged = () => {
-      setSafeSpendConfigState(getSafeSpendConfig());
-      setSafeSpendTick((prev) => prev + 1);
-    };
-    window.addEventListener('fintrack_safespend_changed', handleSafeSpendChanged);
-    window.addEventListener('fintrack_earn_first_changed', handleSafeSpendChanged);
 
     // 1. Initial load from local device storage
     const initialTxs = getLocalTransactions();
@@ -279,9 +251,8 @@ export default function HomePage() {
 
     return () => {
       stopContinuousSync();
-      window.removeEventListener('fintrack_safespend_changed', handleSafeSpendChanged);
-      window.removeEventListener('fintrack_earn_first_changed', handleSafeSpendChanged);
       window.removeEventListener('fintrack_data_changed', handleStorageChange);
+
       window.removeEventListener('fintrack_budget_changed', handleStorageChange);
       window.removeEventListener('fintrack_tabs_changed', handleStorageChange);
       window.removeEventListener('fintrack_dues_changed', handleStorageChange);
@@ -529,49 +500,7 @@ export default function HomePage() {
     [handleSaveTransaction]
   );
 
-  // Weekly Safe Spend Shift Logging Handler
-  const handleLogShift = useCallback(
-    (amount: number, description: string) => {
-      const realTime = getExactRealTime();
-      handleSaveTransaction({
-        description,
-        amount,
-        category: 'Daily Wage / Shift',
-        type: 'income',
-        paymentMethod: safeSpendConfig.defaultWallet,
-        date: realTime.date,
-        time: realTime.time,
-        timestamp: realTime.timestamp,
-        notes: 'Logged via Safe Spend Shift Preset',
-      });
-      setSafeSpendTick((prev) => prev + 1);
-    },
-    [safeSpendConfig.defaultWallet, handleSaveTransaction]
-  );
 
-  const handleLogIncome = useCallback(
-    (
-      amount: number,
-      category: string,
-      description: string,
-      wallet?: 'Cash' | 'UPI / Bank'
-    ) => {
-      const realTime = getExactRealTime();
-      handleSaveTransaction({
-        description,
-        amount,
-        category: category || 'Other Inflows',
-        type: 'income',
-        paymentMethod: wallet || safeSpendConfig.defaultWallet,
-        date: realTime.date,
-        time: realTime.time,
-        timestamp: realTime.timestamp,
-        notes: `Logged via Safe Spend Income (${category})`,
-      });
-      setSafeSpendTick((prev) => prev + 1);
-    },
-    [safeSpendConfig.defaultWallet, handleSaveTransaction]
-  );
 
   // Bank SMS Transaction Confirmation
   const handleConfirmSmsTx = useCallback(
@@ -588,7 +517,6 @@ export default function HomePage() {
         timestamp: realTime.timestamp,
         notes: `SMS Log: "${parsed.rawText.substring(0, 45)}..."`,
       });
-      setSafeSpendTick((prev) => prev + 1);
     },
     [handleSaveTransaction]
   );
@@ -615,7 +543,6 @@ export default function HomePage() {
         timestamp: realTime.timestamp,
         notes: 'AI Scanned Bill / UPI Screenshot',
       });
-      setSafeSpendTick((prev) => prev + 1);
     },
     [handleSaveTransaction]
   );
@@ -1166,23 +1093,15 @@ export default function HomePage() {
               onOpenAdjustModal={() => setIsWalletModalOpen(true)}
             />
 
-            {/* Dynamic Runway Safe to Spend Engine (Liquid Cash + Shift Income - Protected Dues & Tabs) */}
-            <DynamicSafeSpendCard
-              state={safeSpendState}
-              config={safeSpendConfig}
-              onUpdateConfig={(newConfig) => {
-                const saved = setSafeSpendConfig(newConfig);
-                setSafeSpendConfigState(saved);
-              }}
-              onLogShift={handleLogShift}
-              onLogIncome={handleLogIncome}
-              dues={dues}
-              onOpenCopilot={() => setIsChatModalOpen(true)}
-            />
-
-
             {/* Today's Activity Stream & Quick 1-Tap Actions (Directly After Liquid Funds) */}
             <section className="space-y-3.5 sm:space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-xs sm:text-sm font-extrabold uppercase font-mono tracking-wider text-black">
+                  Today&apos;s Activity
+                </h2>
+                <PwaCriteriaBadge />
+              </div>
+
               <DailyTimeline
                 transactions={transactions}
                 onDelete={handleDeleteTransaction}
@@ -1211,25 +1130,6 @@ export default function HomePage() {
               />
             </section>
 
-            {/* Financial Summary & Charts */}
-            <section className="space-y-4 sm:space-y-6 pt-2 border-t border-zinc-200">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xs sm:text-sm font-extrabold uppercase font-mono tracking-wider text-black truncate">
-                  Monthly Overview (INR)
-                </h2>
-                <PwaCriteriaBadge />
-              </div>
-
-              <FinancialSummary stats={financialStats} />
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                <SpendingChart data={cashflowData} />
-                <CategoryBreakdown
-                  expenses={categoryExpenses}
-                  incomes={categoryIncomes}
-                />
-              </div>
-            </section>
 
             {/* Transaction History */}
             <section className="pt-2 border-t border-zinc-200">
@@ -1449,28 +1349,7 @@ export default function HomePage() {
         transactions={transactions}
         wallets={wallets}
       />
-
-      {/* AI Copilot Floating Trigger */}
-      <EarnFirstChatTrigger
-        onClick={() => setIsChatModalOpen(true)}
-        safeRemaining={safeSpendState.remainingSafeToday}
-      />
-
-      {/* AI Copilot Chat Modal */}
-      <EarnFirstChatModal
-        isOpen={isChatModalOpen}
-        onClose={() => setIsChatModalOpen(false)}
-        state={safeSpendState}
-        config={safeSpendConfig}
-        onUpdateConfig={(newConfig) => {
-          const saved = setSafeSpendConfig(newConfig);
-          setSafeSpendConfigState(saved);
-        }}
-
-        wallets={wallets}
-        dues={dues}
-        tabs={tabs}
-      />
     </div>
   );
 }
+
