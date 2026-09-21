@@ -127,10 +127,22 @@ export default function ProfileSection({
       if (res.success) {
         setMessage({ type: 'success', text: res.message });
       } else {
-        setMessage({ type: 'error', text: res.error || 'Migration failed' });
+        const errText = res.error || 'Migration failed';
+        setMessage({
+          type: 'error',
+          text: errText.includes('configuration-not-found')
+            ? 'Firebase Authentication is not activated in your Firebase Console yet. Go to Firebase Console > Authentication > Click "Get started" > Under "Sign-in method" tab, enable "Anonymous" and click Save.'
+            : errText,
+        });
       }
     } catch (err: any) {
-      setMessage({ type: 'error', text: err?.message || 'Migration error' });
+      const errText = err?.message || 'Migration error';
+      setMessage({
+        type: 'error',
+        text: errText.includes('configuration-not-found')
+          ? 'Firebase Authentication is not activated in your Firebase Console yet. Go to Firebase Console > Authentication > Click "Get started" > Under "Sign-in method" tab, enable "Anonymous" and click Save.'
+          : errText,
+      });
     } finally {
       setMigrationRunning(false);
     }

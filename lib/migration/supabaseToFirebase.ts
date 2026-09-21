@@ -48,15 +48,35 @@ export async function runSupabaseToFirebaseMigration(
 
     // 1. Ensure Firebase Auth session (sign in anonymously if not signed in)
     let user = getCurrentFirebaseUser();
-    if (!user) {
+    let uid: string;
+
+    if (user) {
+      uid = user.uid;
+    } else {
       onProgress?.('Initializing secure Firebase Spark session...');
-      user = await loginAnonymously();
-      if (!user) {
-        throw new Error('Unable to create or acquire Firebase user session.');
+      try {
+        const anonUser = await loginAnonymously();
+        if (!anonUser) throw new Error('Unable to create or acquire Firebase user session.');
+        uid = anonUser.uid;
+      } catch (authErr: any) {
+        if (
+          authErr?.code === 'auth/configuration-not-found' ||
+          authErr?.message?.includes('configuration-not-found')
+        ) {
+          throw new Error(
+            'Firebase Authentication is not enabled yet in your Firebase Console! Please go to Firebase Console > Build > Authentication > Click "Get started" > Under "Sign-in method" tab, enable "Anonymous" and click Save.'
+          );
+        }
+        // Fallback to stable device identifier if test mode rules allow
+        let deviceUid = typeof window !== 'undefined' ? localStorage.getItem('fintrack_device_uid') : null;
+        if (!deviceUid && typeof window !== 'undefined') {
+          deviceUid = 'device_' + Math.random().toString(36).substring(2, 10);
+          localStorage.setItem('fintrack_device_uid', deviceUid);
+        }
+        uid = deviceUid || 'default_user';
       }
     }
 
-    const uid = user.uid;
     let source: 'supabase' | 'local_storage' = 'local_storage';
 
     let transactions: Transaction[] = [];
