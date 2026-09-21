@@ -8,7 +8,6 @@ import {
   query,
   orderBy,
   limit,
-  onSnapshot,
 } from 'firebase/firestore';
 import { getFirestoreDb } from './client';
 import {
@@ -21,6 +20,27 @@ import {
 } from '@/lib/types';
 
 /**
+ * Strips undefined fields recursively so Cloud Firestore never throws:
+ * "Unsupported field value: undefined"
+ */
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) return null as any;
+  if (Array.isArray(data)) {
+    return data.map((item) => sanitizeForFirestore(item)) as any;
+  }
+  if (typeof data === 'object') {
+    const clean: Record<string, any> = {};
+    for (const [key, val] of Object.entries(data as Record<string, any>)) {
+      if (val !== undefined) {
+        clean[key] = sanitizeForFirestore(val);
+      }
+    }
+    return clean as any;
+  }
+  return data;
+}
+
+/**
  * Save user liquid wallet balances to Cloud Firestore
  */
 export async function syncWalletsToFirebase(
@@ -31,11 +51,19 @@ export async function syncWalletsToFirebase(
   if (!db) return;
 
   const docRef = doc(db, `users/${uid}/wallets`, 'balances');
-  await setDoc(docRef, {
-    cashInHand: wallets.cashInHand,
-    accountBalance: wallets.accountBalance,
-    updatedAt: Date.now(),
-  }, { merge: true });
+  const w = wallets as any;
+  const cashInHand = Number(w?.cashInHand ?? w?.cash_in_hand) || 0;
+  const accountBalance = Number(w?.accountBalance ?? w?.account_balance) || 0;
+
+  await setDoc(
+    docRef,
+    sanitizeForFirestore({
+      cashInHand,
+      accountBalance,
+      updatedAt: Date.now(),
+    }),
+    { merge: true }
+  );
 }
 
 export async function fetchWalletsFromFirebase(uid: string): Promise<WalletBalances | null> {
@@ -47,8 +75,8 @@ export async function fetchWalletsFromFirebase(uid: string): Promise<WalletBalan
   if (snap.exists()) {
     const data = snap.data();
     return {
-      cashInHand: data.cashInHand ?? 0,
-      accountBalance: data.accountBalance ?? 0,
+      cashInHand: Number(data.cashInHand) || 0,
+      accountBalance: Number(data.accountBalance) || 0,
       lastUpdated: data.updatedAt,
     };
   }
@@ -63,13 +91,18 @@ export async function syncBudgetToFirebase(uid: string, budget: BudgetConfig): P
   if (!db) return;
 
   const docRef = doc(db, `users/${uid}/budget`, 'config');
-  await setDoc(docRef, {
-    monthlyLimit: budget.monthlyLimit,
-    dailyAllowance: budget.dailyAllowance,
-    currency: budget.currency || 'INR',
-    currencySymbol: budget.currencySymbol || '₹',
-    updatedAt: Date.now(),
-  }, { merge: true });
+  const b = budget as any;
+  await setDoc(
+    docRef,
+    sanitizeForFirestore({
+      monthlyLimit: Number(b?.monthlyLimit ?? b?.monthly_limit) || 20000,
+      dailyAllowance: Number(b?.dailyAllowance ?? b?.daily_allowance) || 600,
+      currency: b?.currency || 'INR',
+      currencySymbol: b?.currencySymbol || '₹',
+      updatedAt: Date.now(),
+    }),
+    { merge: true }
+  );
 }
 
 export async function fetchBudgetFromFirebase(uid: string): Promise<BudgetConfig | null> {
@@ -81,8 +114,8 @@ export async function fetchBudgetFromFirebase(uid: string): Promise<BudgetConfig
   if (snap.exists()) {
     const data = snap.data();
     return {
-      monthlyLimit: data.monthlyLimit,
-      dailyAllowance: data.dailyAllowance,
+      monthlyLimit: Number(data.monthlyLimit) || 20000,
+      dailyAllowance: Number(data.dailyAllowance) || 600,
       currency: data.currency || 'INR',
       currencySymbol: data.currencySymbol || '₹',
     };
@@ -101,7 +134,7 @@ export async function saveTransactionToFirebase(
   if (!db) return;
 
   const docRef = doc(db, `users/${uid}/transactions`, tx.id);
-  await setDoc(docRef, { ...tx, updatedAt: Date.now() }, { merge: true });
+  await setDoc(docRef, sanitizeForFirestore({ ...tx, updatedAt: Date.now() }), { merge: true });
 }
 
 /**
@@ -132,7 +165,7 @@ export async function syncDuesToFirebase(uid: string, dues: MonthlyDue[]): Promi
   const batch = writeBatch(db);
   dues.forEach((due) => {
     const ref = doc(db, `users/${uid}/monthly_dues`, due.id);
-    batch.set(ref, { ...due, updatedAt: Date.now() }, { merge: true });
+    batch.set(ref, sanitizeForFirestore({ ...due, updatedAt: Date.now() }), { merge: true });
   });
   await batch.commit();
 }
@@ -160,7 +193,7 @@ export async function syncTabsToFirebase(uid: string, tabs: TabItem[]): Promise<
   const batch = writeBatch(db);
   tabs.forEach((tab) => {
     const ref = doc(db, `users/${uid}/tabs`, tab.id);
-    batch.set(ref, { ...tab, updatedAt: Date.now() }, { merge: true });
+    batch.set(ref, sanitizeForFirestore({ ...tab, updatedAt: Date.now() }), { merge: true });
   });
   await batch.commit();
 }
@@ -188,7 +221,7 @@ export async function syncPresetsToFirebase(uid: string, presets: QuickPreset[])
   const batch = writeBatch(db);
   presets.forEach((preset) => {
     const ref = doc(db, `users/${uid}/presets`, preset.id);
-    batch.set(ref, { ...preset, updatedAt: Date.now() }, { merge: true });
+    batch.set(ref, sanitizeForFirestore({ ...preset, updatedAt: Date.now() }), { merge: true });
   });
   await batch.commit();
 }
@@ -226,19 +259,19 @@ export async function batchMigrateAllUserData(
 
   onProgress?.('Initializing Firestore batch pipeline...');
 
-  // 1. Wallets & Budget
+  // 1. Wallets & Budget (with full null/undefined safety)
   await syncWalletsToFirebase(uid, payload.wallets);
   await syncBudgetToFirebase(uid, payload.budget);
   onProgress?.('Synced wallets and budget config.');
 
-  // 2. Transactions in chunks of 450 (Firestore limit is 500 per batch)
+  // 2. Transactions in chunks of 400 (Firestore batch limit is 500)
   const chunkSize = 400;
   for (let i = 0; i < payload.transactions.length; i += chunkSize) {
     const chunk = payload.transactions.slice(i, i + chunkSize);
     const batch = writeBatch(db);
     chunk.forEach((tx) => {
       const ref = doc(db, `users/${uid}/transactions`, tx.id);
-      batch.set(ref, { ...tx, updatedAt: Date.now() }, { merge: true });
+      batch.set(ref, sanitizeForFirestore({ ...tx, updatedAt: Date.now() }), { merge: true });
     });
     await batch.commit();
     onProgress?.(`Synced ${Math.min(i + chunkSize, payload.transactions.length)} of ${payload.transactions.length} transactions...`);
