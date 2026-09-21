@@ -8,123 +8,12 @@ import {
   onAuthStateChanged,
   User,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { getFirebaseAuth, getFirestoreDb, isFirebaseConfigured } from './client';
-
-export const SUPER_ADMIN_EMAILS = [
-  'smohamedfarook2024@gmail.com',
-  ...(process.env.NEXT_PUBLIC_ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
-];
-
-export const SUPER_ADMIN_UIDS = [
-  '7LgmzR1aKhThP7C4kFyRXEJaYEl1',
-];
-
-export type UserRole = 'admin' | 'tester';
-
-export interface UserProfile {
-  uid: string;
-  email: string | null;
-  displayName: string | null;
-  photoURL: string | null;
-  role: UserRole;
-  createdAt: number;
-  lastActive: number;
-  provider: 'google' | 'password' | 'anonymous';
-}
+import { getFirebaseAuth, isFirebaseConfigured } from './client';
 
 export interface AuthState {
   user: User | null;
-  profile: UserProfile | null;
   loading: boolean;
   configured: boolean;
-}
-
-/**
- * Checks whether a given user or email has Super Admin privileges.
- */
-export function isUserAdmin(user: User | null | { email?: string | null; uid?: string }): boolean {
-  if (!user) return false;
-  if (user.uid && SUPER_ADMIN_UIDS.includes(user.uid)) return true;
-  const email = user.email?.toLowerCase().trim();
-  if (email && SUPER_ADMIN_EMAILS.includes(email)) return true;
-  return false;
-}
-
-/**
- * Retrieves the signed Firebase JWT ID Token for authorized server/API calls.
- * Automatically refreshes expired tokens.
- */
-export async function getAuthIdToken(forceRefresh: boolean = false): Promise<string | null> {
-  const auth = getFirebaseAuth();
-  if (!auth?.currentUser) return null;
-  try {
-    return await auth.currentUser.getIdToken(forceRefresh);
-  } catch (err) {
-    console.warn('[Firebase Auth] Failed to retrieve JWT ID Token:', err);
-    return null;
-  }
-}
-
-/**
- * Registers or updates a user profile document in Firestore (`users/{uid}`)
- * for admin tracking and multi-tenant management.
- */
-export async function registerOrUpdateUserProfile(user: User): Promise<UserProfile | null> {
-  const db = getFirestoreDb();
-  if (!db || !user?.uid) return null;
-
-  try {
-    const userRef = doc(db, 'users', user.uid);
-    const existingSnap = await getDoc(userRef);
-
-    const isAdmin = isUserAdmin(user);
-    const role: UserRole = isAdmin ? 'admin' : 'tester';
-
-    let provider: 'google' | 'password' | 'anonymous' = 'anonymous';
-    if (user.providerData && user.providerData.length > 0) {
-      const providerId = user.providerData[0].providerId;
-      if (providerId.includes('google')) provider = 'google';
-      else if (providerId.includes('password')) provider = 'password';
-    } else if (!user.isAnonymous) {
-      provider = 'password';
-    }
-
-    const now = Date.now();
-    let profile: UserProfile;
-
-    if (existingSnap.exists()) {
-      const data = existingSnap.data();
-      profile = {
-        uid: user.uid,
-        email: user.email || data.email || null,
-        displayName: user.displayName || data.displayName || null,
-        photoURL: user.photoURL || data.photoURL || null,
-        role: (data.role as UserRole) === 'admin' || isAdmin ? 'admin' : 'tester',
-        createdAt: data.createdAt || now,
-        lastActive: now,
-        provider: provider !== 'anonymous' ? provider : (data.provider || 'anonymous'),
-      };
-      await setDoc(userRef, profile, { merge: true });
-    } else {
-      profile = {
-        uid: user.uid,
-        email: user.email || null,
-        displayName: user.displayName || (user.isAnonymous ? 'Guest Tester' : null),
-        photoURL: user.photoURL || null,
-        role,
-        createdAt: now,
-        lastActive: now,
-        provider,
-      };
-      await setDoc(userRef, profile, { merge: true });
-    }
-
-    return profile;
-  } catch (err) {
-    console.warn('[Firebase Auth] Failed to register/update user profile:', err);
-    return null;
-  }
 }
 
 export async function loginWithGoogle(): Promise<User | null> {
@@ -137,8 +26,6 @@ export async function loginWithGoogle(): Promise<User | null> {
   if (credential.user?.uid && typeof window !== 'undefined') {
     localStorage.setItem('fintrack_firebase_uid', credential.user.uid);
   }
-  // Register or update profile document asynchronously
-  registerOrUpdateUserProfile(credential.user).catch(() => {});
   return credential.user;
 }
 
@@ -150,7 +37,6 @@ export async function loginAnonymously(): Promise<User | null> {
   if (credential.user?.uid && typeof window !== 'undefined') {
     localStorage.setItem('fintrack_firebase_uid', credential.user.uid);
   }
-  registerOrUpdateUserProfile(credential.user).catch(() => {});
   return credential.user;
 }
 
@@ -161,7 +47,6 @@ export async function loginWithEmail(email: string, pass: string): Promise<User 
   if (credential.user?.uid && typeof window !== 'undefined') {
     localStorage.setItem('fintrack_firebase_uid', credential.user.uid);
   }
-  registerOrUpdateUserProfile(credential.user).catch(() => {});
   return credential.user;
 }
 
@@ -172,7 +57,6 @@ export async function registerWithEmail(email: string, pass: string): Promise<Us
   if (credential.user?.uid && typeof window !== 'undefined') {
     localStorage.setItem('fintrack_firebase_uid', credential.user.uid);
   }
-  registerOrUpdateUserProfile(credential.user).catch(() => {});
   return credential.user;
 }
 
@@ -191,8 +75,6 @@ export function subscribeToAuth(callback: (user: User | null) => void): () => vo
   return onAuthStateChanged(auth, (user) => {
     if (user?.uid && typeof window !== 'undefined') {
       localStorage.setItem('fintrack_firebase_uid', user.uid);
-      // Refresh user activity timestamp on auth change
-      registerOrUpdateUserProfile(user).catch(() => {});
     }
     callback(user);
   });
@@ -218,7 +100,6 @@ export async function getOrInitFirebaseUser(): Promise<User | null> {
     if (typeof window !== 'undefined') {
       localStorage.setItem('fintrack_firebase_uid', auth.currentUser.uid);
     }
-    registerOrUpdateUserProfile(auth.currentUser).catch(() => {});
     return auth.currentUser;
   }
 
@@ -232,7 +113,6 @@ export async function getOrInitFirebaseUser(): Promise<User | null> {
         if (typeof window !== 'undefined') {
           localStorage.setItem('fintrack_firebase_uid', user.uid);
         }
-        registerOrUpdateUserProfile(user).catch(() => {});
         resolve(user);
       } else {
         try {
@@ -242,7 +122,6 @@ export async function getOrInitFirebaseUser(): Promise<User | null> {
           if (cred.user?.uid && typeof window !== 'undefined') {
             localStorage.setItem('fintrack_firebase_uid', cred.user.uid);
           }
-          registerOrUpdateUserProfile(cred.user).catch(() => {});
           resolve(cred.user);
         } catch (err) {
           console.warn('[Firebase] Anonymous sign-in error:', err);
@@ -265,7 +144,7 @@ export async function getOrInitFirebaseUser(): Promise<User | null> {
 
 /**
  * Returns the most accurate known Firebase UID.
- * Fallback to the Super Admin document populated during migration if auth is still initializing.
+ * Fallback to the user document populated during migration if auth is still initializing.
  */
 export function getActiveFirebaseUid(): string {
   const user = getCurrentFirebaseUser();

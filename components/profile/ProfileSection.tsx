@@ -19,7 +19,6 @@ import {
   loginWithGoogle,
   logoutUser as logoutFirebaseUser,
   getActiveFirebaseUid,
-  isUserAdmin,
 } from '@/lib/firebase/authService';
 import {
   fetchAllFirebaseUserData,
@@ -60,7 +59,6 @@ import {
   Sparkles,
   ArrowRight,
   Check,
-  Shield,
 } from 'lucide-react';
 import {
   isNotificationSupported,
@@ -91,8 +89,6 @@ interface ProfileSectionProps {
   }) => void;
   onClearAllData: () => void;
   onOpenStatement?: () => void;
-  onOpenAdminModal?: () => void;
-  onOpenAuthModal?: () => void;
 }
 
 export default function ProfileSection({
@@ -105,8 +101,6 @@ export default function ProfileSection({
   onCloudSyncSuccess,
   onClearAllData,
   onOpenStatement,
-  onOpenAdminModal,
-  onOpenAuthModal,
 }: ProfileSectionProps) {
   const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(() => getCurrentFirebaseUser());
@@ -518,23 +512,12 @@ export default function ProfileSection({
 
         {/* Active Account / Session info */}
         <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
               <ShieldCheck className="w-3.5 h-3.5 text-black" />
               <span className="font-bold text-zinc-900">
                 {firebaseUser?.email || (firebaseUser?.isAnonymous ? 'Spark Free Tier Session (Protected)' : 'Active Cloud Session')}
               </span>
-              {firebaseUser && !firebaseUser.isAnonymous && (
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[9px] font-mono font-bold ${
-                    isUserAdmin(firebaseUser)
-                      ? 'bg-black text-emerald-400 border border-emerald-500/30'
-                      : 'bg-zinc-200 text-zinc-700'
-                  }`}
-                >
-                  {isUserAdmin(firebaseUser) ? 'SUPER ADMIN' : 'BETA TESTER'}
-                </span>
-              )}
             </div>
             <p className="text-[10px] font-mono text-zinc-500 truncate max-w-sm">
               UID: {firebaseUser?.uid || getActiveFirebaseUid()}
@@ -545,12 +528,12 @@ export default function ProfileSection({
             {!firebaseUser || firebaseUser.isAnonymous ? (
               <button
                 type="button"
-                onClick={onOpenAuthModal || handleGoogleSignIn}
+                onClick={handleGoogleSignIn}
                 disabled={loading}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-black hover:bg-zinc-800 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs"
               >
                 <LogIn className="w-3 h-3" />
-                <span>Sign In with Google</span>
+                <span>Link Google Account</span>
               </button>
             ) : (
               <button
@@ -565,37 +548,6 @@ export default function ProfileSection({
             )}
           </div>
         </div>
-
-        {/* Super Admin Command Center Card (Visible to Super Admin) */}
-        {isUserAdmin(firebaseUser) && (
-          <div className="p-4 bg-zinc-950 text-white rounded-2xl border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-white/10 rounded-xl border border-white/10 text-emerald-400">
-                <Shield className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h4 className="text-xs sm:text-base font-bold tracking-tight">Super Admin Command Center</h4>
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    Live
-                  </span>
-                </div>
-                <p className="text-[11px] text-zinc-400">
-                  Monitor beta testers, inspect user ledger metrics, and review Spark tier quota
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={onOpenAdminModal}
-              className="flex items-center justify-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-xl transition-all shadow-sm shrink-0 cursor-pointer"
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span>Open Admin Console</span>
-            </button>
-          </div>
-        )}
 
         {/* Two-Way Push & Pull to Firebase */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">

@@ -1,27 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper to identify Super Admin
-    function isAdmin() {
-      return request.auth != null && (
-        request.auth.token.email == 'smohamedfarook2024@gmail.com' ||
-        request.auth.uid == '7LgmzR1aKhThP7C4kFyRXEJaYEl1'
-      );
-    }
-
-    // Top-level users directory:
-    // Any authenticated user can read & update their own profile; Admin can read and list all testers.
-    match /users/{userId} {
-      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
-      allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
-    }
-
-    // Secure multi-tenant user isolation:
-    // Testers can only read & write their own ledger subcollections; Super Admin can inspect for support/monitoring.
+    // Secure multi-tenant user isolation: users can only read and write their own documents
     match /users/{userId}/{document=**} {
-      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
-      allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
   }
 }
