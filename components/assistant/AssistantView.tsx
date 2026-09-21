@@ -15,7 +15,7 @@ import {
   buildFinancialKnowledgeGraph,
   FinancialKnowledgeGraph,
 } from '@/lib/ai/knowledgeGraph';
-import { ActionProposal, AIProvider } from '@/lib/ai/aiService';
+import { ActionProposal } from '@/lib/ai/aiService';
 import {
   Sparkles,
   Send,
@@ -25,7 +25,6 @@ import {
   VolumeX,
   Bot,
   User as UserIcon,
-  ShieldCheck,
   CheckCircle2,
   Layers,
   Wallet,
@@ -33,10 +32,10 @@ import {
   Users,
   Check,
   RefreshCw,
-  Cpu,
-  HelpCircle,
-  TrendingDown,
-  ArrowRight,
+  KeyRound,
+  ExternalLink,
+  X,
+  Lock,
 } from 'lucide-react';
 
 interface AssistantViewProps {
@@ -65,16 +64,17 @@ export default function AssistantView({
       id: 'msg_welcome',
       role: 'assistant',
       content:
-        "Hello! I am your FinTrack AI Copilot. Your complete app state is connected as an active **Financial Knowledge Graph**. I can check balances, calculate affordances, verify debt tabs, and directly execute ledger transactions via voice or chat.",
+        "Hello! I am your FinTrack Copilot, powered by Google Gemini ✨.\n\nI have real-time access to your personal Financial Knowledge Graph and can also answer ANY general knowledge, coding, math, writing, or everyday questions just like Google Gemini. How can I help you today?",
       timestamp: Date.now(),
     },
   ]);
 
   const [inputPrompt, setInputPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [provider, setProvider] = useState<AIProvider>('gemini');
   const [apiKey, setApiKey] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const [tempKeyInput, setTempKeyInput] = useState('');
+  const [keySavedToast, setKeySavedToast] = useState(false);
 
   // Voice Input State (Speech-to-Text)
   const [isListening, setIsListening] = useState(false);
@@ -96,6 +96,15 @@ export default function AssistantView({
       budget,
     });
   }, [transactions, wallets, dues, tabs, budget]);
+
+  // Load saved Gemini API key from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('fintrack_gemini_api_key') || '';
+      setApiKey(stored);
+      setTempKeyInput(stored);
+    }
+  }, []);
 
   // Initialize Speech Recognition
   useEffect(() => {
@@ -177,7 +186,7 @@ export default function AssistantView({
     window.speechSynthesis.speak(utterance);
   };
 
-  // Send message
+  // Send message to Gemini / Copilot API
   const handleSendMessage = async (textToSend?: string) => {
     const query = (textToSend || inputPrompt).trim();
     if (!query || isLoading) return;
@@ -202,7 +211,7 @@ export default function AssistantView({
             role: m.role,
             content: m.content,
           })),
-          provider,
+          provider: 'gemini',
           apiKey: apiKey.trim() || undefined,
           fkgData: {
             transactions,
@@ -235,7 +244,7 @@ export default function AssistantView({
       const errorMsg: ChatMessage = {
         id: `err_${Date.now()}`,
         role: 'assistant',
-        content: `Sorry, I encountered an issue connecting to the AI provider: ${err?.message || 'Network error'}. Fallback knowledge graph response is active.`,
+        content: `Sorry, I encountered an issue: ${err?.message || 'Network error'}. Local knowledge graph fallback is available.`,
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, errorMsg]);
@@ -267,10 +276,11 @@ export default function AssistantView({
 
   const starterChips = [
     'How much do I have in hand vs account?',
+    'Explain how compound interest works with an example',
     'Who owes me money right now?',
-    'What are my upcoming dues this month?',
+    'Can I afford a ₹1,200 purchase today?',
     'Paid ₹120 for chai in cash',
-    'Can I afford a ₹1,200 dinner tonight?',
+    'Suggest 5 smart money-saving tips in India',
   ];
 
   return (
@@ -279,24 +289,24 @@ export default function AssistantView({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-zinc-200">
         <div className="flex items-center gap-2.5">
           <div className="p-2 bg-black text-white rounded-xl shadow-xs">
-            <Sparkles className="w-5 h-5" />
+            <Sparkles className="w-5 h-5 text-amber-300" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base sm:text-lg font-bold text-zinc-950 tracking-tight">
                 Financial AI Copilot
               </h2>
-              <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-800 border border-zinc-300 uppercase">
-                Knowledge Graph Grounded
+              <span className="text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-black text-white uppercase">
+                Google Gemini
               </span>
             </div>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Natural language personal banker with voice dictation &amp; 1-tap ledger execution
+              Full-featured Gemini chatbot with live Financial Knowledge Graph grounding
             </p>
           </div>
         </div>
 
-        {/* Model & Audio Controls */}
+        {/* Top Controls: Voice Out + Gemini Key Setup */}
         <div className="flex items-center gap-2">
           {/* TTS Toggle */}
           <button
@@ -307,102 +317,36 @@ export default function AssistantView({
                 ? 'bg-black text-white border-black'
                 : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-100'
             }`}
-            title={isAudioFeedbackEnabled ? 'Mute AI voice output' : 'Enable AI voice speech'}
+            title={isAudioFeedbackEnabled ? 'Mute AI voice speech' : 'Enable AI voice speech'}
           >
             {isAudioFeedbackEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">Voice Out</span>
           </button>
 
-          {/* Model Switcher Button */}
+          {/* Gemini Key Configuration Button */}
           <button
             type="button"
-            onClick={() => setShowSettings(!showSettings)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-xl text-xs font-semibold border border-zinc-200 transition-colors cursor-pointer"
+            onClick={() => {
+              setTempKeyInput(apiKey);
+              setShowKeyModal(true);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+              apiKey
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                : 'bg-zinc-100 text-zinc-800 border-zinc-300 hover:bg-zinc-200'
+            }`}
+            title="Configure Google Gemini API Key"
           >
-            <Cpu className="w-3.5 h-3.5" />
-            <span className="capitalize">{provider}</span>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                apiKey ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'
+              }`}
+            />
+            <KeyRound className="w-3.5 h-3.5 text-zinc-700" />
+            <span className="font-mono">{apiKey ? 'Gemini Active' : 'Gemini Key'}</span>
           </button>
         </div>
       </div>
-
-      {/* Model & Settings Drawer */}
-      <AnimatePresence>
-        {showSettings && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="bg-zinc-50 border border-zinc-200 rounded-2xl p-4 space-y-3 overflow-hidden text-xs"
-          >
-            <div className="flex items-center justify-between font-bold text-zinc-950">
-              <span className="flex items-center gap-1.5">
-                <Cpu className="w-4 h-4" /> AI Model Engine Configuration
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowSettings(false)}
-                className="text-zinc-400 hover:text-black"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setProvider('gemini')}
-                className={`p-2.5 rounded-xl border text-left transition-all ${
-                  provider === 'gemini'
-                    ? 'bg-black text-white border-black font-bold'
-                    : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                }`}
-              >
-                <span className="block font-semibold">Google Gemini 2.5 Flash</span>
-                <span className="text-[10px] opacity-75">1M+ context window (Default)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setProvider('groq')}
-                className={`p-2.5 rounded-xl border text-left transition-all ${
-                  provider === 'groq'
-                    ? 'bg-black text-white border-black font-bold'
-                    : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                }`}
-              >
-                <span className="block font-semibold">Groq (Llama 3.3)</span>
-                <span className="text-[10px] opacity-75">Open-source, ultra fast</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setProvider('ollama')}
-                className={`p-2.5 rounded-xl border text-left transition-all ${
-                  provider === 'ollama'
-                    ? 'bg-black text-white border-black font-bold'
-                    : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                }`}
-              >
-                <span className="block font-semibold">Local Ollama</span>
-                <span className="text-[10px] opacity-75">100% private on localhost</span>
-              </button>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[11px] text-zinc-600 font-semibold block">
-                Optional Custom API Key (Leave blank to use internal engine or server environment):
-              </label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="AI Provider API Key (stored in memory only)"
-                className="w-full p-2 bg-white border border-zinc-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-black"
-              />
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 items-start">
@@ -467,7 +411,7 @@ export default function AssistantView({
 
             {/* Grounding guarantee */}
             <p className="text-[10px] text-zinc-400 leading-relaxed pt-1">
-              Every message is strictly cross-referenced against your ledger nodes to ensure zero hallucinations.
+              Financial questions are cross-referenced directly against your live ledger nodes for zero hallucinations.
             </p>
           </div>
         </div>
@@ -475,6 +419,22 @@ export default function AssistantView({
         {/* RIGHT COLUMN: Interactive Conversational Workspace & Voice Console */}
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm flex flex-col h-[560px] overflow-hidden">
+            {/* Subtle offline notice when no key is entered */}
+            {!apiKey && (
+              <div className="px-4 py-2 bg-amber-50/80 border-b border-amber-200/60 flex items-center justify-between text-xs text-amber-900">
+                <span className="text-[11px]">
+                  💡 Running on offline ledger engine. Click <strong>Gemini Key</strong> to connect free AI for answering any question!
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowKeyModal(true)}
+                  className="text-[10px] font-bold underline hover:text-black shrink-0 cursor-pointer ml-2"
+                >
+                  Connect Key
+                </button>
+              </div>
+            )}
+
             {/* Messages Scroll Area */}
             <div className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4">
               {messages.map((msg) => {
@@ -511,125 +471,235 @@ export default function AssistantView({
                 );
               })}
 
-              {/* Action Proposals rendered directly in chat stream */}
-              {pendingProposals.map((proposal) => (
-                <motion.div
-                  key={proposal.id}
-                  initial={{ opacity: 0, scale: 0.96 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="p-3.5 bg-zinc-50 border border-zinc-300 rounded-2xl space-y-2.5 max-w-[85%] sm:max-w-[78%]"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-mono uppercase font-bold tracking-wider text-zinc-600 flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-black" />
-                      Agentic Action Proposal
-                    </span>
-                    {proposal.applied && (
-                      <span className="text-[9px] font-mono font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md flex items-center gap-1">
-                        <Check className="w-3 h-3" /> Applied
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="text-xs">
-                    <div className="font-bold text-zinc-950">{proposal.title}</div>
-                    <div className="text-zinc-600 mt-0.5">{proposal.description}</div>
-                  </div>
-
-                  {!proposal.applied && (
-                    <div className="pt-1 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleApplyProposal(proposal)}
-                        className="px-3.5 py-1.5 bg-black hover:bg-zinc-800 text-white font-semibold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <Check className="w-3 h-3" />
-                        <span>Confirm &amp; Apply</span>
-                      </button>
-                    </div>
-                  )}
-                </motion.div>
-              ))}
-
               {isLoading && (
-                <div className="flex items-center gap-2 text-xs text-zinc-500 p-2 font-mono">
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-black" />
-                  <span>Traversing Knowledge Graph &amp; synthesizing response...</span>
+                <div className="flex items-center gap-2 text-zinc-500 text-xs p-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-black" />
+                  <span>Google Gemini is reasoning...</span>
                 </div>
               )}
+
+              {/* Action Proposals Cards in Chat Flow */}
+              {pendingProposals.map((proposal) => {
+                return (
+                  <motion.div
+                    key={proposal.id}
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="p-4 bg-zinc-50 border border-zinc-300 rounded-2xl space-y-2.5 shadow-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-black text-white rounded-lg">
+                          <CheckCircle2 className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-zinc-950">{proposal.title}</h4>
+                          <p className="text-[11px] text-zinc-500">{proposal.description}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-zinc-200/80">
+                      {proposal.applied ? (
+                        <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 font-mono">
+                          <Check className="w-3.5 h-3.5" /> Logged to Ledger
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleApplyProposal(proposal)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-black hover:bg-zinc-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-transform active:scale-95 cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Confirm &amp; Log</span>
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
 
               <div ref={chatBottomRef} />
             </div>
 
             {/* Quick Starter Chips */}
-            <div className="px-4 py-2 border-t border-zinc-100 flex items-center gap-1.5 overflow-x-auto no-scrollbar bg-zinc-50/50">
+            <div className="p-2.5 bg-zinc-50 border-t border-zinc-200 overflow-x-auto flex items-center gap-1.5 scrollbar-none">
               {starterChips.map((chip, idx) => (
                 <button
                   key={idx}
                   type="button"
                   onClick={() => handleSendMessage(chip)}
-                  className="px-2.5 py-1 bg-white hover:bg-zinc-100 border border-zinc-200 rounded-full text-[11px] text-zinc-700 whitespace-nowrap transition-colors shrink-0 cursor-pointer"
+                  disabled={isLoading}
+                  className="px-2.5 py-1 bg-white hover:bg-zinc-100 border border-zinc-200 rounded-full text-[11px] text-zinc-700 whitespace-nowrap transition-colors cursor-pointer shrink-0 disabled:opacity-50"
                 >
                   {chip}
                 </button>
               ))}
             </div>
 
-            {/* Input Bar with Voice & Send */}
-            <div className="p-3 sm:p-4 border-t border-zinc-200 bg-white">
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSendMessage();
-                }}
-                className="flex items-center gap-2"
+            {/* Input Bar with Voice Dictation */}
+            <div className="p-3 bg-white border-t border-zinc-200 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleVoiceInput}
+                className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
+                  isListening
+                    ? 'bg-red-500 text-white border-red-600 animate-pulse'
+                    : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border-zinc-200'
+                }`}
+                title={isListening ? 'Listening... click to stop' : 'Tap to speak via Voice'}
               >
-                {/* Voice Input Button */}
-                <motion.button
-                  whileTap={{ scale: 0.9 }}
-                  animate={
-                    isListening
-                      ? { scale: [1, 1.15, 1], transition: { repeat: Infinity, duration: 1.2 } }
-                      : {}
-                  }
-                  type="button"
-                  onClick={toggleVoiceInput}
-                  className={`p-2.5 rounded-xl border transition-all shrink-0 cursor-pointer ${
-                    isListening
-                      ? 'bg-red-600 text-white border-red-700 shadow-md'
-                      : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-200'
-                  }`}
-                  title={isListening ? 'Stop listening' : 'Start voice input (Speech-to-Text)'}
-                >
-                  {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                </motion.button>
+                {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
 
-                {/* Text Input */}
-                <input
-                  type="text"
-                  value={inputPrompt}
-                  onChange={(e) => setInputPrompt(e.target.value)}
-                  placeholder={
-                    isListening
-                      ? 'Listening to your voice... speak now...'
-                      : 'Ask about balances, debts, bills, or say "Paid 120 in cash"...'
+              <input
+                type="text"
+                value={inputPrompt}
+                onChange={(e) => setInputPrompt(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
                   }
-                  className="flex-1 p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-black"
-                />
+                }}
+                placeholder={
+                  isListening
+                    ? 'Listening to your voice...'
+                    : 'Ask anything or command Gemini (e.g. "Can I afford dinner?", "What is inflation?")...'
+                }
+                className="flex-1 px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black focus:bg-white transition-all"
+              />
 
-                {/* Send Button */}
-                <button
-                  type="submit"
-                  disabled={!inputPrompt.trim() || isLoading}
-                  className="p-2.5 bg-black hover:bg-zinc-800 disabled:opacity-40 text-white rounded-xl transition-all shrink-0 cursor-pointer"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </form>
+              <button
+                type="button"
+                onClick={() => handleSendMessage()}
+                disabled={isLoading || !inputPrompt.trim()}
+                className="p-2.5 bg-black hover:bg-zinc-800 disabled:opacity-40 text-white rounded-xl transition-all shadow-xs shrink-0 cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Clean Gemini API Key Modal */}
+      <AnimatePresence>
+        {showKeyModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white border border-zinc-200 rounded-3xl w-full max-w-md shadow-2xl p-5 space-y-4 overflow-hidden"
+            >
+              <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-black text-white rounded-xl">
+                    <Sparkles className="w-4 h-4 text-amber-300" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-zinc-950">Google Gemini AI Engine</h3>
+                    <p className="text-[11px] text-zinc-500">Free, fast chatbot &amp; financial reasoning</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowKeyModal(false)}
+                  className="p-1 rounded-lg text-zinc-400 hover:text-black cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-2 text-xs text-zinc-600">
+                <p>
+                  FinTrack is exclusively powered by <strong>Google Gemini</strong>. Enter your free API key to enable live conversational reasoning, answering any question (like the Gemini app), voice synthesis, and receipt scanning.
+                </p>
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-black hover:underline"
+                >
+                  <span>Get your 100% Free Gemini Key from Google AI Studio</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-zinc-700 block">
+                  Gemini API Key (Saved securely in this browser)
+                </label>
+                <input
+                  type="password"
+                  value={tempKeyInput}
+                  onChange={(e) => setTempKeyInput(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-black focus:bg-white"
+                />
+              </div>
+
+              {keySavedToast && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Gemini key saved successfully! Full chatbot features active.</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-zinc-100">
+                {apiKey ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      localStorage.removeItem('fintrack_gemini_api_key');
+                      setApiKey('');
+                      setTempKeyInput('');
+                      setShowKeyModal(false);
+                    }}
+                    className="text-xs text-red-600 hover:underline cursor-pointer"
+                  >
+                    Remove Key
+                  </button>
+                ) : (
+                  <div />
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowKeyModal(false)}
+                    className="px-3 py-1.5 text-xs text-zinc-600 hover:text-black rounded-lg transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const key = tempKeyInput.trim();
+                      setApiKey(key);
+                      if (key) {
+                        localStorage.setItem('fintrack_gemini_api_key', key);
+                        setKeySavedToast(true);
+                        setTimeout(() => {
+                          setKeySavedToast(false);
+                          setShowKeyModal(false);
+                        }, 800);
+                      } else {
+                        localStorage.removeItem('fintrack_gemini_api_key');
+                        setShowKeyModal(false);
+                      }
+                    }}
+                    className="px-4 py-2 bg-black hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Save Key
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

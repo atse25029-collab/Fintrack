@@ -60,12 +60,12 @@ export default function ReceiptScanModal({
   const triggerScan = async (base64Image: string, mimeType: string) => {
     setScanning(true);
     setError(null);
-
     try {
+      const storedKey = typeof window !== 'undefined' ? localStorage.getItem('fintrack_gemini_api_key') || undefined : undefined;
       const res = await fetch('/api/ai/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64Image, mimeType }),
+        body: JSON.stringify({ image: base64Image, mimeType, apiKey: storedKey }),
       });
 
       const json = await res.json();

@@ -13,7 +13,7 @@ import {
   serializeKnowledgeGraphForLLM,
 } from './knowledgeGraph';
 
-export type AIProvider = 'gemini' | 'groq' | 'ollama';
+export type AIProvider = 'gemini';
 
 export interface ActionProposal {
   id: string;
@@ -31,9 +31,8 @@ export interface AIChatResponse {
 
 export interface ChatRequestPayload {
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
-  provider: AIProvider;
+  provider?: AIProvider;
   apiKey?: string;
-  ollamaUrl?: string;
   fkgData: {
     transactions: Transaction[];
     wallets: WalletBalances;
@@ -238,13 +237,16 @@ Even after spending ₹${amount}, you will retain ₹${(cushion - amount).toLoca
   }
 
   // Default intelligent assistant response grounded in FKG
-  let defaultMsg = `I've analyzed your **Financial Knowledge Graph**. You currently hold **₹${summary.totalLiquid.toLocaleString('en-IN')}** across Cash (₹${hand}) and Account (₹${account}), with **₹${summary.pendingDuesTotal}** in pending dues and **${summary.topCategory}** as your highest spending area.
+  let defaultMsg = `I am your **Google Gemini Financial Copilot**. Right now I am operating in offline ledger mode because a Gemini API key is not connected yet.
 
-You can ask me anything about:
-- *"Who owes me money?"*
-- *"Can I afford dinner out tonight?"*
-- *"Log ₹120 for chai in cash"*
-- *"What are my upcoming bills?"*`;
+I can answer your real-time financial ledger questions offline:
+• *"How much do I have in hand vs account?"* (You have ₹${summary.totalLiquid.toLocaleString('en-IN')})
+• *"Who owes me money or what tabs are pending?"*
+• *"What are my upcoming dues this month?"*
+• *"Can I afford a ₹1,200 purchase?"*
+• *"Log ₹150 for lunch via upi"*
+
+✨ **To ask general questions** (knowledge, writing, coding, or conversational chat like Google Gemini), click the **Gemini Key** button in the header and paste your free key from [Google AI Studio](https://aistudio.google.com/)!`;
 
   if (action) {
     defaultMsg = `I've prepared a ledger proposal based on your message:\n- **${action.title}**: ${action.description}\n\nReview and confirm below to record this into your ledger.`;
