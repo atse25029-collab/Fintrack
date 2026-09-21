@@ -1,13 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import NativeInstallButton from '@/components/pwa/NativeInstallButton';
 import {
   Target,
   Database,
   Plus,
-  ChevronDown,
   LayoutDashboard,
   Users,
   Calendar,
@@ -42,7 +41,6 @@ export default function Header({
   dueAlertCount = 0,
   onForceSync,
 }: HeaderProps) {
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [liveTime, setLiveTime] = useState<string>('');
   const [theme, setTheme] = useState<ThemeMode>('light');
 
@@ -69,21 +67,18 @@ export default function Header({
   }, []);
 
   const sections: { id: AppSection; label: string; icon: any; alert?: number }[] = [
-    { id: 'daily', label: 'Home Overview', icon: LayoutDashboard },
-    { id: 'tabs', label: 'Tabs (Lent & Borrowed)', icon: Users },
-    { id: 'dues', label: 'Monthly Dues', icon: Calendar, alert: dueAlertCount },
+    { id: 'daily', label: 'Home', icon: LayoutDashboard },
+    { id: 'tabs', label: 'Tabs', icon: Users },
+    { id: 'dues', label: 'Dues', icon: Calendar, alert: dueAlertCount },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-    { id: 'profile', label: 'Profile & Cloud Sync', icon: User },
+    { id: 'profile', label: 'Profile', icon: User },
   ];
 
-  const activeSectionObj = sections.find((s) => s.id === currentSection) || sections[0];
-  const ActiveIcon = activeSectionObj.icon;
-
   return (
-    <header className="sticky top-0 z-30 bg-[#f4f4f5]/95 backdrop-blur-md border-b border-zinc-200 py-2.5 px-3 sm:px-6 w-full max-w-full overflow-hidden">
-      <div className="max-w-6xl mx-auto flex items-center justify-between gap-1.5 sm:gap-3 w-full">
-        {/* Left: Brand Logo + Desktop Dropdown */}
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+    <header className="sticky top-0 z-30 bg-[#f4f4f5]/95 backdrop-blur-md border-b border-zinc-200 py-2.5 px-3 sm:px-6 w-full max-w-full">
+      <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-4 w-full">
+        {/* Left: Brand Logo + Brand Name */}
+        <div className="flex items-center gap-2.5 min-w-0 shrink-0">
           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-black flex items-center justify-center text-white shadow-sm shrink-0">
             <div className="flex items-end gap-0.5 h-3.5 sm:h-4">
               <div className="w-0.5 sm:w-1 bg-white h-1.5 sm:h-2 rounded-full" />
@@ -92,85 +87,61 @@ export default function Header({
             </div>
           </div>
 
-          {/* Desktop Section Dropdown Switcher */}
-          <div className="relative hidden md:block">
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white border border-zinc-200 hover:border-black rounded-xl shadow-xs text-xs font-semibold text-zinc-950 transition-colors group cursor-pointer"
-            >
-              <ActiveIcon className="w-3.5 h-3.5 text-black" />
-              <span>{activeSectionObj.label}</span>
-              {activeSectionObj.alert ? (
-                <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
-              ) : null}
-              <ChevronDown className="w-3.5 h-3.5 text-zinc-400 group-hover:text-black transition-transform" />
-            </motion.button>
-
-            <AnimatePresence>
-              {dropdownOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setDropdownOpen(false)}
-                  />
-                  <motion.div
-                    initial={{ opacity: 0, y: -6, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -6, scale: 0.96 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute left-0 mt-1.5 w-60 bg-white rounded-xl shadow-xl border border-zinc-200 py-1.5 z-50 origin-top-left"
-                  >
-                    <div className="px-3 py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-400">
-                      Switch Section
-                    </div>
-                    {sections.map((sec) => {
-                      const Icon = sec.icon;
-                      const isActive = currentSection === sec.id;
-                      return (
-                        <button
-                          key={sec.id}
-                          onClick={() => {
-                            onSelectSection(sec.id);
-                            setDropdownOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${
-                            isActive
-                              ? 'bg-zinc-100 text-black font-semibold'
-                              : 'text-zinc-700 hover:bg-zinc-50 hover:text-black'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <Icon className="w-4 h-4 text-black" />
-                            <span>{sec.label}</span>
-                          </div>
-                          {sec.alert && sec.alert > 0 ? (
-                            <span className="px-1.5 py-0.5 bg-black text-white text-[10px] font-mono rounded font-bold">
-                              {sec.alert} Due
-                            </span>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </motion.div>
-                </>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Mobile Brand Name */}
-          <span className="md:hidden text-xs font-mono font-bold uppercase tracking-wider text-black truncate">
+          <span className="text-xs sm:text-sm font-mono font-bold uppercase tracking-wider text-black">
             FinTrack
           </span>
 
           {/* Real-Time Live Clock Badge (Tablet & Desktop) */}
           {liveTime && (
-            <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 sm:px-2.5 sm:py-1 bg-zinc-200/70 border border-zinc-300 rounded-lg text-[10px] sm:text-[11px] font-mono text-zinc-700 shrink-0">
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-zinc-200/70 border border-zinc-300 rounded-lg text-[10px] sm:text-[11px] font-mono text-zinc-700 shrink-0">
               <Clock className="w-3 h-3 text-zinc-900 shrink-0" />
               <span>{liveTime}</span>
             </div>
           )}
         </div>
+
+        {/* Center: Desktop Navigation Bar with Motion Spring Sliding Pill */}
+        <nav
+          aria-label="Desktop Navigation"
+          className="hidden md:flex items-center gap-1 bg-zinc-200/70 p-1 rounded-xl border border-zinc-300/80 shadow-2xs"
+        >
+          {sections.map((sec) => {
+            const Icon = sec.icon;
+            const isActive = currentSection === sec.id;
+
+            return (
+              <motion.button
+                key={sec.id}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => onSelectSection(sec.id)}
+                className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  isActive ? 'text-black' : 'text-zinc-500 hover:text-black'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="activeDesktopNavPill"
+                    className="absolute inset-0 bg-white rounded-lg shadow-xs border border-zinc-200/80"
+                    transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                  />
+                )}
+                <span className="relative z-10 flex items-center gap-1.5">
+                  <Icon
+                    className={`w-3.5 h-3.5 ${
+                      isActive ? 'text-black stroke-[2.5]' : 'text-zinc-500 stroke-[1.8]'
+                    }`}
+                  />
+                  <span>{sec.label}</span>
+                  {sec.alert && sec.alert > 0 ? (
+                    <span className="px-1.5 py-0.2 bg-red-600 text-white text-[9px] font-mono rounded-full font-bold">
+                      {sec.alert}
+                    </span>
+                  ) : null}
+                </span>
+              </motion.button>
+            );
+          })}
+        </nav>
 
         {/* Right Nav Actions: Scaled for mobile */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
