@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, TransactionType } from '@/lib/types';
 import { formatCurrency, formatDateLabel } from '@/lib/utils';
 import { Search, ArrowDownLeft, ArrowUpRight, Trash2, Edit2 } from 'lucide-react';
@@ -63,6 +64,12 @@ export default function TransactionList({
 
   const dates = Object.keys(groupedByDate);
 
+  const filterOptions: { id: 'all' | TransactionType; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'expense', label: 'Expenses' },
+    { id: 'income', label: 'Income' },
+  ];
+
   return (
     <div className="bg-white rounded-2xl p-4 sm:p-6 border border-zinc-200 shadow-sm space-y-4 w-full max-w-full overflow-hidden">
       {/* Header */}
@@ -72,38 +79,29 @@ export default function TransactionList({
           <p className="text-[11px] sm:text-xs text-zinc-500">Filter, search, and manage your records</p>
         </div>
 
-        {/* Type Switcher */}
-        <div className="flex p-0.5 bg-zinc-100 rounded-lg border border-zinc-200 text-xs font-medium w-full sm:w-auto">
-          <button
-            onClick={() => setTypeFilter('all')}
-            className={`flex-1 sm:flex-initial px-2.5 py-1 rounded-md transition-all ${
-              typeFilter === 'all'
-                ? 'bg-black text-white shadow-sm font-semibold'
-                : 'text-zinc-600 hover:text-black'
-            }`}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setTypeFilter('expense')}
-            className={`flex-1 sm:flex-initial px-2.5 py-1 rounded-md transition-all ${
-              typeFilter === 'expense'
-                ? 'bg-black text-white shadow-sm font-semibold'
-                : 'text-zinc-600 hover:text-black'
-            }`}
-          >
-            Expenses
-          </button>
-          <button
-            onClick={() => setTypeFilter('income')}
-            className={`flex-1 sm:flex-initial px-2.5 py-1 rounded-md transition-all ${
-              typeFilter === 'income'
-                ? 'bg-black text-white shadow-sm font-semibold'
-                : 'text-zinc-600 hover:text-black'
-            }`}
-          >
-            Income
-          </button>
+        {/* Type Switcher with Animated Sliding Pill */}
+        <div className="relative flex p-0.5 bg-zinc-100 rounded-lg border border-zinc-200 text-xs font-medium w-full sm:w-auto">
+          {filterOptions.map((opt) => {
+            const isActive = typeFilter === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => setTypeFilter(opt.id)}
+                className={`relative z-10 flex-1 sm:flex-initial px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                  isActive ? 'text-white font-semibold' : 'text-zinc-600 hover:text-black'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="txFilterPill"
+                    className="absolute inset-0 bg-black rounded-md shadow-xs"
+                    transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                  />
+                )}
+                <span className="relative z-10">{opt.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -150,12 +148,14 @@ export default function TransactionList({
       {filteredTransactions.length === 0 ? (
         <div className="py-8 text-center space-y-2.5 bg-zinc-50 rounded-xl border border-dashed border-zinc-200 p-4">
           <p className="text-xs text-zinc-500">No transactions match your search criteria.</p>
-          <button
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.95 }}
             onClick={onAddNew}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-black text-white text-xs font-semibold rounded-lg hover:bg-zinc-800"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-black text-white text-xs font-semibold rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <span>Add Transaction</span>
-          </button>
+          </motion.button>
         </div>
       ) : (
         <div className="space-y-4">
@@ -171,78 +171,86 @@ export default function TransactionList({
                 </div>
 
                 <div className="divide-y divide-zinc-100">
-                  {dayTxs.map((tx) => {
-                    const isIncome = tx.type === 'income';
-                    return (
-                      <div
-                        key={tx.id}
-                        className="py-2.5 flex items-center justify-between gap-2 -mx-1 px-1.5 rounded-lg hover:bg-zinc-50/80 transition-colors"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          <div
-                            className={`p-1.5 sm:p-2 rounded-xl border shrink-0 ${
-                              isIncome
-                                ? 'bg-zinc-100 border-zinc-300 text-black'
-                                : 'bg-black border-zinc-950 text-white'
-                            }`}
-                          >
-                            {isIncome ? (
-                              <ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
-                            ) : (
-                              <ArrowDownLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="text-xs font-semibold text-zinc-950 truncate">
-                                {tx.description}
-                              </span>
-                              <span className="text-[9px] font-mono px-1 py-0.2 bg-zinc-100 text-zinc-600 rounded border border-zinc-200 shrink-0">
-                                {tx.paymentMethod.split(' ')[0]}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-zinc-500 truncate mt-0.5">
-                              <span className="truncate">{tx.category}</span>
-                              {tx.time && (
-                                <>
-                                  <span className="shrink-0">&bull;</span>
-                                  <span className="font-mono shrink-0">{tx.time}</span>
-                                </>
+                  <AnimatePresence initial={false}>
+                    {dayTxs.map((tx) => {
+                      const isIncome = tx.type === 'income';
+                      return (
+                        <motion.div
+                          key={tx.id}
+                          initial={{ opacity: 0, y: -6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.96, height: 0, overflow: 'hidden', padding: 0 }}
+                          transition={{ duration: 0.16, ease: 'easeOut' }}
+                          className="py-2.5 flex items-center justify-between gap-2 -mx-1 px-1.5 rounded-lg hover:bg-zinc-50/80 transition-colors"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div
+                              className={`p-1.5 sm:p-2 rounded-xl border shrink-0 ${
+                                isIncome
+                                  ? 'bg-zinc-100 border-zinc-300 text-black'
+                                  : 'bg-black border-zinc-950 text-white'
+                              }`}
+                            >
+                              {isIncome ? (
+                                <ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
+                              ) : (
+                                <ArrowDownLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
                               )}
                             </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="text-xs font-semibold text-zinc-950 truncate">
+                                  {tx.description}
+                                </span>
+                                <span className="text-[9px] font-mono px-1 py-0.2 bg-zinc-100 text-zinc-600 rounded border border-zinc-200 shrink-0">
+                                  {tx.paymentMethod.split(' ')[0]}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-zinc-500 truncate mt-0.5">
+                                <span className="truncate">{tx.category}</span>
+                                {tx.time && (
+                                  <>
+                                    <span className="shrink-0">&bull;</span>
+                                    <span className="font-mono shrink-0">{tx.time}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span
-                            className={`text-xs sm:text-sm font-mono font-bold ${
-                              isIncome ? 'text-black font-extrabold' : 'text-zinc-950'
-                            }`}
-                          >
-                            {isIncome ? '+' : '-'}
-                            {formatCurrency(tx.amount)}
-                          </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span
+                              className={`text-xs sm:text-sm font-mono font-bold ${
+                                isIncome ? 'text-black font-extrabold' : 'text-zinc-950'
+                              }`}
+                            >
+                              {isIncome ? '+' : '-'}
+                              {formatCurrency(tx.amount)}
+                            </span>
 
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              onClick={() => onEdit(tx)}
-                              aria-label="Edit transaction"
-                              className="p-1 text-zinc-400 hover:text-black rounded hover:bg-zinc-200 transition-colors"
-                            >
-                              <Edit2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => onDelete(tx.id)}
-                              aria-label="Delete transaction"
-                              className="p-1 text-zinc-400 hover:text-red-600 rounded hover:bg-zinc-200 transition-colors"
-                            >
-                              <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                            </button>
+                            <div className="flex items-center gap-0.5">
+                              <motion.button
+                                whileTap={{ scale: 0.88 }}
+                                onClick={() => onEdit(tx)}
+                                aria-label="Edit transaction"
+                                className="p-1 text-zinc-400 hover:text-black rounded hover:bg-zinc-200 transition-colors cursor-pointer"
+                              >
+                                <Edit2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                              </motion.button>
+                              <motion.button
+                                whileTap={{ scale: 0.88 }}
+                                onClick={() => onDelete(tx.id)}
+                                aria-label="Delete transaction"
+                                className="p-1 text-zinc-400 hover:text-red-600 rounded hover:bg-zinc-200 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                              </motion.button>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
                 </div>
               </div>
             );
@@ -252,3 +260,4 @@ export default function TransactionList({
     </div>
   );
 }
+

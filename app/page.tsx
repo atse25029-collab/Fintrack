@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import Header, { AppSection } from '@/components/layout/Header';
 import BottomNav from '@/components/layout/BottomNav';
 import WalletOverview from '@/components/wallets/WalletOverview';
@@ -1116,139 +1117,175 @@ export default function HomePage() {
 
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-6xl mx-auto px-3.5 sm:px-6 lg:px-8 py-3.5 sm:py-6 pb-28 md:pb-8 space-y-4 sm:space-y-6">
-        {/* VIEW 1: HOME DASHBOARD */}
-        {currentSection === 'daily' && (
-          <div className="space-y-4 sm:space-y-6 animate-in fade-in duration-150 w-full max-w-full overflow-hidden">
-            {/* Top Liquid Funds & Wallet Balances */}
-            <WalletOverview
-              wallets={wallets}
-              onOpenAdjustModal={() => setIsWalletModalOpen(true)}
-            />
-
-            {/* Today's Activity Stream & Quick 1-Tap Actions (Directly After Liquid Funds) */}
-            <section className="space-y-3.5 sm:space-y-4">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-xs sm:text-sm font-extrabold uppercase font-mono tracking-wider text-black">
-                  Today&apos;s Activity
-                </h2>
-                <PwaCriteriaBadge />
-              </div>
-
-              <DailyTimeline
-                transactions={transactions}
-                onDelete={handleDeleteTransaction}
-                onEdit={(tx) => {
-                  setEditingTx(tx);
-                  setIsTxModalOpen(true);
-                }}
-                onLogFirst={() => {
-                  setEditingTx(null);
-                  setTxModalDefaultType('expense');
-                  setIsTxModalOpen(true);
-                }}
+        <AnimatePresence mode="wait">
+          {/* VIEW 1: HOME DASHBOARD */}
+          {currentSection === 'daily' && (
+            <motion.div
+              key="daily"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="space-y-4 sm:space-y-6 w-full max-w-full overflow-hidden"
+            >
+              {/* Top Liquid Funds & Wallet Balances */}
+              <WalletOverview
+                wallets={wallets}
+                onOpenAdjustModal={() => setIsWalletModalOpen(true)}
               />
 
-              <QuickAddBar
+              {/* Today's Activity Stream & Quick 1-Tap Actions (Directly After Liquid Funds) */}
+              <section className="space-y-3.5 sm:space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-xs sm:text-sm font-extrabold uppercase font-mono tracking-wider text-black">
+                    Today&apos;s Activity
+                  </h2>
+                  <PwaCriteriaBadge />
+                </div>
+
+                <DailyTimeline
+                  transactions={transactions}
+                  onDelete={handleDeleteTransaction}
+                  onEdit={(tx) => {
+                    setEditingTx(tx);
+                    setIsTxModalOpen(true);
+                  }}
+                  onLogFirst={() => {
+                    setEditingTx(null);
+                    setTxModalDefaultType('expense');
+                    setIsTxModalOpen(true);
+                  }}
+                />
+
+                <QuickAddBar
+                  presets={presets}
+                  onOpenPresetManager={() => setIsPresetModalOpen(true)}
+                  onQuickAdd={handleQuickAdd}
+                  onOpenCustomModal={(type) => {
+                    setEditingTx(null);
+                    setTxModalDefaultType(type);
+                    setIsTxModalOpen(true);
+                  }}
+                  onOpenPasteSms={() => setIsPasteSmsOpen(true)}
+                  onOpenReceiptScan={() => setIsReceiptScanOpen(true)}
+                />
+              </section>
+
+              {/* Transaction History */}
+              <section className="pt-2 border-t border-zinc-200">
+                <TransactionList
+                  transactions={transactions}
+                  onDelete={handleDeleteTransaction}
+                  onEdit={(tx) => {
+                    setEditingTx(tx);
+                    setIsTxModalOpen(true);
+                  }}
+                  onAddNew={() => {
+                    setEditingTx(null);
+                    setTxModalDefaultType('expense');
+                    setIsTxModalOpen(true);
+                  }}
+                />
+              </section>
+            </motion.div>
+          )}
+
+          {/* VIEW 2: TABS (LENT & BORROWED / SPLITS) */}
+          {currentSection === 'tabs' && (
+            <motion.div
+              key="tabs"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="w-full max-w-full overflow-hidden"
+            >
+              <TabsManager
+                tabs={tabs}
+                onSaveTab={handleSaveTab}
+                onSettleTab={handleSettleTab}
+                onDeleteTab={handleDeleteTab}
+                onOpenAddModal={() => {
+                  setEditingTab(null);
+                  setIsTabModalOpen(true);
+                }}
+                onEditTab={(tab) => {
+                  setEditingTab(tab);
+                  setIsTabModalOpen(true);
+                }}
+              />
+            </motion.div>
+          )}
+
+          {/* VIEW 3: MONTHLY DUES (RECURRING BILLS & REMINDERS) */}
+          {currentSection === 'dues' && (
+            <motion.div
+              key="dues"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="w-full max-w-full overflow-hidden"
+            >
+              <MonthlyDuesManager
+                dues={dues}
+                onSaveDue={handleSaveDue}
+                onPayAndRecord={handlePayAndRecordDue}
+                onDeleteDue={handleDeleteDue}
+                onOpenAddModal={() => {
+                  setEditingDue(null);
+                  setIsDueModalOpen(true);
+                }}
+                onEditDue={(due) => {
+                  setEditingDue(due);
+                  setIsDueModalOpen(true);
+                }}
+              />
+            </motion.div>
+          )}
+
+          {/* VIEW 4: DEDICATED ANALYTICS */}
+          {currentSection === 'analytics' && (
+            <motion.div
+              key="analytics"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="w-full max-w-full overflow-hidden"
+            >
+              <AnalyticsView
+                transactions={transactions}
+                budget={budget}
+                onOpenStatement={() => setIsStatementOpen(true)}
+              />
+            </motion.div>
+          )}
+
+          {/* VIEW 5: PROFILE & CLOUD DATABASE SYNC */}
+          {currentSection === 'profile' && (
+            <motion.div
+              key="profile"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="w-full max-w-full overflow-hidden"
+            >
+              <ProfileSection
+                transactions={transactions}
+                wallets={wallets}
+                tabs={tabs}
+                dues={dues}
                 presets={presets}
-                onOpenPresetManager={() => setIsPresetModalOpen(true)}
-                onQuickAdd={handleQuickAdd}
-                onOpenCustomModal={(type) => {
-                  setEditingTx(null);
-                  setTxModalDefaultType(type);
-                  setIsTxModalOpen(true);
-                }}
-                onOpenPasteSms={() => setIsPasteSmsOpen(true)}
-                onOpenReceiptScan={() => setIsReceiptScanOpen(true)}
+                budget={budget}
+                onCloudSyncSuccess={handleCloudSyncSuccess}
+                onClearAllData={handleClearAll}
+                onOpenStatement={() => setIsStatementOpen(true)}
               />
-            </section>
-
-
-            {/* Transaction History */}
-            <section className="pt-2 border-t border-zinc-200">
-              <TransactionList
-                transactions={transactions}
-                onDelete={handleDeleteTransaction}
-                onEdit={(tx) => {
-                  setEditingTx(tx);
-                  setIsTxModalOpen(true);
-                }}
-                onAddNew={() => {
-                  setEditingTx(null);
-                  setTxModalDefaultType('expense');
-                  setIsTxModalOpen(true);
-                }}
-              />
-            </section>
-          </div>
-        )}
-
-        {/* VIEW 2: TABS (LENT & BORROWED / SPLITS) */}
-        {currentSection === 'tabs' && (
-          <div className="animate-in fade-in duration-150 w-full max-w-full overflow-hidden">
-            <TabsManager
-              tabs={tabs}
-              onSaveTab={handleSaveTab}
-              onSettleTab={handleSettleTab}
-              onDeleteTab={handleDeleteTab}
-              onOpenAddModal={() => {
-                setEditingTab(null);
-                setIsTabModalOpen(true);
-              }}
-              onEditTab={(tab) => {
-                setEditingTab(tab);
-                setIsTabModalOpen(true);
-              }}
-            />
-          </div>
-        )}
-
-        {/* VIEW 3: MONTHLY DUES (RECURRING BILLS & REMINDERS) */}
-        {currentSection === 'dues' && (
-          <div className="animate-in fade-in duration-150 w-full max-w-full overflow-hidden">
-            <MonthlyDuesManager
-              dues={dues}
-              onSaveDue={handleSaveDue}
-              onPayAndRecord={handlePayAndRecordDue}
-              onDeleteDue={handleDeleteDue}
-              onOpenAddModal={() => {
-                setEditingDue(null);
-                setIsDueModalOpen(true);
-              }}
-              onEditDue={(due) => {
-                setEditingDue(due);
-                setIsDueModalOpen(true);
-              }}
-            />
-          </div>
-        )}
-
-        {/* VIEW 4: DEDICATED ANALYTICS */}
-        {currentSection === 'analytics' && (
-          <div className="animate-in fade-in duration-150 w-full max-w-full overflow-hidden">
-            <AnalyticsView
-              transactions={transactions}
-              budget={budget}
-              onOpenStatement={() => setIsStatementOpen(true)}
-            />
-          </div>
-        )}
-
-        {/* VIEW 5: PROFILE & CLOUD DATABASE SYNC */}
-        {currentSection === 'profile' && (
-          <div className="animate-in fade-in duration-150 w-full max-w-full overflow-hidden">
-            <ProfileSection
-              transactions={transactions}
-              wallets={wallets}
-              tabs={tabs}
-              dues={dues}
-              presets={presets}
-              budget={budget}
-              onCloudSyncSuccess={handleCloudSyncSuccess}
-              onClearAllData={handleClearAll}
-              onOpenStatement={() => setIsStatementOpen(true)}
-            />
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
       {/* Native Mobile Android Bottom Navigation Bar */}
@@ -1259,7 +1296,9 @@ export default function HomePage() {
       />
 
       {/* Mobile Floating Action Button */}
-      <button
+      <motion.button
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.9 }}
         onClick={() => {
           if (currentSection === 'tabs') {
             setEditingTab(null);
@@ -1274,10 +1313,10 @@ export default function HomePage() {
           }
         }}
         aria-label="Add new item"
-        className="md:hidden fixed bottom-20 right-3.5 z-40 p-3 bg-black text-white rounded-full shadow-2xl hover:bg-zinc-800 active:scale-90 transition-transform border border-zinc-800"
+        className="md:hidden fixed bottom-20 right-3.5 z-40 p-3 bg-black text-white rounded-full shadow-2xl hover:bg-zinc-800 transition-colors border border-zinc-800 cursor-pointer"
       >
         <Plus className="w-5 h-5 stroke-[2.5]" />
-      </button>
+      </motion.button>
 
       {/* Footer */}
       <footer className="mt-8 md:mt-12 py-6 md:py-8 pb-24 md:pb-8 border-t border-zinc-200 bg-white/50 text-center text-xs text-zinc-500 font-mono space-y-2 px-3">

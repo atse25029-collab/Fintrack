@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Transaction } from '@/lib/types';
 import { exportTransactionsToCSV, parseCSVToTransactions } from '@/lib/utils';
 import { X, Download, Upload, RotateCcw, Trash2, Check, AlertTriangle } from 'lucide-react';
@@ -25,8 +26,6 @@ export default function ExportImportModal({
   const [csvInput, setCsvInput] = useState('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-
-  if (!isOpen) return null;
 
   // Handle Export
   const handleExport = () => {
@@ -77,8 +76,27 @@ export default function ExportImportModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-zinc-200 space-y-5 max-h-[90vh] overflow-y-auto">
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+            onClick={onClose}
+          />
+
+          {/* Dialog Card */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 14 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 14 }}
+            transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+            className="relative z-10 bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-zinc-200 space-y-5 max-h-[90vh] overflow-y-auto"
+          >
         <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
           <div>
             <h3 className="text-base font-bold text-zinc-950">Data Management & Backup</h3>
@@ -152,40 +170,45 @@ export default function ExportImportModal({
 
         {/* Section 3: Reset or Clear */}
         <div className="pt-2 border-t border-zinc-100 flex flex-col sm:flex-row gap-2">
-          <button
+          <motion.button
+            whileTap={{ scale: 0.96 }}
             onClick={() => {
               onResetSampleData();
               setMessage('Reset to initial sample data.');
             }}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-zinc-100 text-zinc-800 text-xs font-semibold rounded-xl hover:bg-zinc-200 transition-colors border border-zinc-200"
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-zinc-100 text-zinc-800 text-xs font-semibold rounded-xl hover:bg-zinc-200 transition-colors border border-zinc-200 cursor-pointer"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             <span>Restore Sample Data</span>
-          </button>
+          </motion.button>
 
           {!showClearConfirm ? (
-            <button
+            <motion.button
+              whileTap={{ scale: 0.96 }}
               onClick={() => setShowClearConfirm(true)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-zinc-100 text-zinc-600 hover:text-red-600 text-xs font-semibold rounded-xl hover:bg-red-50 transition-colors border border-zinc-200"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-zinc-100 text-zinc-600 hover:text-red-600 text-xs font-semibold rounded-xl hover:bg-red-50 transition-colors border border-zinc-200 cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Clear All Data</span>
-            </button>
+            </motion.button>
           ) : (
-            <button
+            <motion.button
+              whileTap={{ scale: 0.96 }}
               onClick={() => {
                 onClearAll();
                 setShowClearConfirm(false);
                 setMessage('All transactions cleared.');
               }}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-red-600 text-white text-xs font-semibold rounded-xl hover:bg-red-700 transition-colors"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-red-600 text-white text-xs font-semibold rounded-xl hover:bg-red-700 transition-colors cursor-pointer"
             >
               <AlertTriangle className="w-3.5 h-3.5" />
               <span>Confirm Clear Everything</span>
-            </button>
+            </motion.button>
           )}
         </div>
-      </div>
+      </motion.div>
     </div>
+      )}
+    </AnimatePresence>
   );
 }

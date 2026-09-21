@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { QuickPreset, PaymentMethod, DEFAULT_CATEGORIES } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 import {
@@ -69,8 +70,6 @@ export default function QuickPresetModal({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('UPI / Bank');
   const [iconName, setIconName] = useState<QuickPreset['iconName']>('coffee');
   const [error, setError] = useState<string | null>(null);
-
-  if (!isOpen) return null;
 
   const handleStartEdit = (preset: QuickPreset) => {
     const isInc = preset.type === 'income';
@@ -161,8 +160,27 @@ export default function QuickPresetModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-black/40 backdrop-blur-xs animate-in fade-in">
-      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-zinc-200 animate-in zoom-in-95 space-y-4">
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto">
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+            onClick={onClose}
+          />
+
+          {/* Dialog Card */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 14 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 14 }}
+            transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+            className="relative z-10 bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-2xl border border-zinc-200 space-y-4"
+          >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
           <div>
@@ -426,25 +444,29 @@ export default function QuickPresetModal({
             </div>
           </div>
 
-          <button
+          <motion.button
+            whileTap={{ scale: 0.96 }}
             type="submit"
-            className="w-full py-2 bg-black text-white text-xs font-semibold rounded-xl hover:bg-zinc-800 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+            className="w-full py-2 bg-black text-white text-xs font-semibold rounded-xl hover:bg-zinc-800 transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
           >
             {editingId ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
             <span>{editingId ? 'Update Preset' : 'Add Preset'}</span>
-          </button>
+          </motion.button>
         </form>
 
         <div className="pt-2 border-t border-zinc-100 flex justify-end">
-          <button
+          <motion.button
+            whileTap={{ scale: 0.96 }}
             type="button"
             onClick={onClose}
-            className="px-4 py-2 bg-zinc-900 text-white text-xs font-semibold rounded-xl hover:bg-zinc-800 transition-colors"
+            className="px-4 py-2 bg-zinc-900 text-white text-xs font-semibold rounded-xl hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             Done
-          </button>
+          </motion.button>
         </div>
-      </div>
+      </motion.div>
     </div>
+      )}
+    </AnimatePresence>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { motion } from 'motion/react';
 import { QuickPreset, PaymentMethod } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 import { getPresetIcon } from './QuickPresetModal';
@@ -37,14 +38,15 @@ export default function QuickAddBar({
           Quick 1-Tap Daily Log (INR)
         </span>
 
-        <button
+        <motion.button
           type="button"
+          whileTap={{ scale: 0.95 }}
           onClick={onOpenPresetManager}
-          className="flex items-center gap-1 text-[11px] sm:text-xs text-zinc-600 hover:text-black font-medium transition-colors shrink-0"
+          className="flex items-center gap-1 text-[11px] sm:text-xs text-zinc-600 hover:text-black font-medium transition-colors shrink-0 cursor-pointer"
         >
           <SlidersHorizontal className="w-3 h-3 text-black" />
           <span>Customise ({presets.length})</span>
-        </button>
+        </motion.button>
       </div>
 
       {/* Dynamic 1-Tap Presets Grid (Supports both Incomes and Expenses!) */}
@@ -55,8 +57,11 @@ export default function QuickAddBar({
           const isCash = item.paymentMethod === 'Cash';
 
           return (
-            <button
+            <motion.button
               key={item.id}
+              whileHover={{ scale: 1.015, y: -1 }}
+              whileTap={{ scale: 0.94 }}
+              transition={{ type: 'spring', stiffness: 450, damping: 25 }}
               onClick={() =>
                 onQuickAdd({
                   description: item.label,
@@ -66,7 +71,7 @@ export default function QuickAddBar({
                   paymentMethod: item.paymentMethod,
                 })
               }
-              className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl active:scale-[0.97] transition-all border text-left group min-w-0 ${
+              className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl border text-left group min-w-0 cursor-pointer ${
                 isIncome
                   ? 'bg-zinc-100/70 hover:bg-zinc-100 border-zinc-300'
                   : 'bg-zinc-50 hover:bg-zinc-100 border-zinc-200'
@@ -108,50 +113,59 @@ export default function QuickAddBar({
                 {isIncome ? '+' : '-'}
                 {formatCurrency(item.amount)}
               </span>
-            </button>
+            </motion.button>
           );
         })}
       </div>
 
       {/* Primary manual log buttons */}
       <div className="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-100">
-        <button
+        <motion.button
+          whileHover={{ scale: 1.015 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => onOpenCustomModal('expense')}
-          className="flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 bg-black text-white text-[11px] sm:text-xs font-semibold rounded-xl hover:bg-zinc-800 active:scale-95 transition-all shadow-sm"
+          className="flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 bg-black text-white text-[11px] sm:text-xs font-semibold rounded-xl hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
         >
           <ArrowDownLeft className="w-3.5 h-3.5 text-white stroke-[2.5] shrink-0" />
           <span className="truncate">Custom Expense</span>
-        </button>
+        </motion.button>
 
-        <button
+        <motion.button
+          whileHover={{ scale: 1.015 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => onOpenCustomModal('income')}
-          className="flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 bg-zinc-100 text-black text-[11px] sm:text-xs font-semibold rounded-xl hover:bg-zinc-200 active:scale-95 transition-all border border-zinc-300"
+          className="flex items-center justify-center gap-1.5 py-2 sm:py-2.5 px-2 bg-zinc-100 text-black text-[11px] sm:text-xs font-semibold rounded-xl hover:bg-zinc-200 transition-colors border border-zinc-300 cursor-pointer"
         >
           <ArrowUpRight className="w-3.5 h-3.5 text-black stroke-[2.5] shrink-0" />
           <span className="truncate">Log Income</span>
-        </button>
+        </motion.button>
       </div>
 
       {/* Smart 1-Tap Entry: Paste SMS & AI Bill Scan */}
       <div className="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-100">
-        <button
+        <motion.button
           type="button"
+          whileHover={{ scale: 1.015 }}
+          whileTap={{ scale: 0.95 }}
           onClick={onOpenPasteSms}
-          className="flex items-center justify-center gap-1.5 py-2 px-2 bg-zinc-50 hover:bg-zinc-100 text-zinc-800 text-[11px] font-semibold rounded-xl border border-zinc-200 active:scale-95 transition-all"
+          className="flex items-center justify-center gap-1.5 py-2 px-2 bg-zinc-50 hover:bg-zinc-100 text-zinc-800 text-[11px] font-semibold rounded-xl border border-zinc-200 transition-colors cursor-pointer"
         >
           <MessageSquare className="w-3.5 h-3.5 text-black" />
           <span>Paste Bank SMS</span>
-        </button>
+        </motion.button>
 
-        <button
+        <motion.button
           type="button"
+          whileHover={{ scale: 1.015 }}
+          whileTap={{ scale: 0.95 }}
           onClick={onOpenReceiptScan}
-          className="flex items-center justify-center gap-1.5 py-2 px-2 bg-zinc-50 hover:bg-zinc-100 text-zinc-800 text-[11px] font-semibold rounded-xl border border-zinc-200 active:scale-95 transition-all"
+          className="flex items-center justify-center gap-1.5 py-2 px-2 bg-zinc-50 hover:bg-zinc-100 text-zinc-800 text-[11px] font-semibold rounded-xl border border-zinc-200 transition-colors cursor-pointer"
         >
           <Camera className="w-3.5 h-3.5 text-black" />
           <span>AI Scan Bill / UPI</span>
-        </button>
+        </motion.button>
       </div>
     </div>
   );
 }
+

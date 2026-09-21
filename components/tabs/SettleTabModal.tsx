@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { TabItem, PaymentMethod } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 import { X, Banknote, Building2, Check, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
@@ -25,18 +26,36 @@ export default function SettleTabModal({
   const [selectedMethod, setSelectedMethod] = useState<'Cash' | 'UPI / Bank'>('UPI / Bank');
   const [recordTransaction, setRecordTransaction] = useState(true);
 
-  if (!isOpen || !tab) return null;
-
-  const isOwedToMe = tab.type === 'owed_to_you';
+  const isOwedToMe = tab?.type === 'owed_to_you';
 
   const handleConfirm = () => {
+    if (!tab) return;
     onConfirmSettle(tab, selectedMethod, recordTransaction);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-black/40 backdrop-blur-xs animate-in fade-in">
-      <div className="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-zinc-200 animate-in zoom-in-95 space-y-4">
+    <AnimatePresence>
+      {isOpen && tab && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto">
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+            onClick={onClose}
+          />
+
+          {/* Dialog Card */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 14 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 14 }}
+            transition={{ type: 'spring', stiffness: 450, damping: 30 }}
+            className="relative z-10 bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-zinc-200 space-y-4 max-h-[90vh] overflow-y-auto"
+          >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
           <div className="flex items-center gap-2">
@@ -161,23 +180,27 @@ export default function SettleTabModal({
 
         {/* Action Buttons */}
         <div className="flex gap-2.5 pt-2">
-          <button
+          <motion.button
+            whileTap={{ scale: 0.96 }}
             type="button"
             onClick={onClose}
-            className="flex-1 py-2 text-xs font-medium text-zinc-600 hover:text-black bg-zinc-100 hover:bg-zinc-200 rounded-xl transition-colors"
+            className="flex-1 py-2 text-xs font-medium text-zinc-600 hover:text-black bg-zinc-100 hover:bg-zinc-200 rounded-xl transition-colors cursor-pointer"
           >
             Cancel
-          </button>
-          <button
+          </motion.button>
+          <motion.button
+            whileTap={{ scale: 0.96 }}
             type="button"
             onClick={handleConfirm}
-            className="flex-1 py-2 bg-black text-white text-xs font-semibold rounded-xl hover:bg-zinc-800 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+            className="flex-1 py-2 bg-black text-white text-xs font-semibold rounded-xl hover:bg-zinc-800 transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
           >
             <Check className="w-3.5 h-3.5" />
             <span>Confirm Settlement</span>
-          </button>
+          </motion.button>
         </div>
-      </div>
+      </motion.div>
     </div>
+      )}
+    </AnimatePresence>
   );
 }
