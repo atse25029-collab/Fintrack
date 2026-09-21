@@ -8,6 +8,7 @@ import {
   Database,
   Plus,
   LayoutDashboard,
+  Sparkles,
   Users,
   Calendar,
   BarChart3,
@@ -20,7 +21,7 @@ import { getStoredTheme, cycleTheme, ThemeMode } from '@/lib/theme/themeService'
 
 import CloudSyncBadge from '@/components/layout/CloudSyncBadge';
 
-export type AppSection = 'daily' | 'tabs' | 'dues' | 'analytics' | 'profile';
+export type AppSection = 'daily' | 'assistant' | 'tabs' | 'dues' | 'analytics' | 'profile';
 
 interface HeaderProps {
   currentSection: AppSection;
@@ -68,6 +69,7 @@ export default function Header({
 
   const sections: { id: AppSection; label: string; icon: any; alert?: number }[] = [
     { id: 'daily', label: 'Home', icon: LayoutDashboard },
+    { id: 'assistant', label: 'AI Copilot', icon: Sparkles },
     { id: 'tabs', label: 'Tabs', icon: Users },
     { id: 'dues', label: 'Dues', icon: Calendar, alert: dueAlertCount },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },

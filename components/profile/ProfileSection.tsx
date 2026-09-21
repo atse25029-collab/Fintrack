@@ -54,6 +54,9 @@ import {
   NotificationPreferences,
 } from '@/lib/notifications/notificationService';
 import { getStoredTheme, applyTheme, ThemeMode } from '@/lib/theme/themeService';
+import { runSupabaseToFirebaseMigration, MigrationReport } from '@/lib/migration/supabaseToFirebase';
+import { isFirebaseConfigured } from '@/lib/firebase/config';
+import { Sparkles, ArrowRight, Check } from 'lucide-react';
 
 interface ProfileSectionProps {
   transactions: Transaction[];
@@ -107,6 +110,31 @@ export default function ProfileSection({
 
   // Appearance Theme State
   const [theme, setTheme] = useState<ThemeMode>('light');
+
+  // Firebase Migration State
+  const [migrationRunning, setMigrationRunning] = useState(false);
+  const [migrationProgress, setMigrationProgress] = useState<string | null>(null);
+  const [migrationResult, setMigrationResult] = useState<MigrationReport | null>(null);
+
+  const handleStartMigration = async () => {
+    setMigrationRunning(true);
+    setMigrationProgress('Initializing transfer...');
+    try {
+      const res = await runSupabaseToFirebaseMigration((msg) => {
+        setMigrationProgress(msg);
+      });
+      setMigrationResult(res);
+      if (res.success) {
+        setMessage({ type: 'success', text: res.message });
+      } else {
+        setMessage({ type: 'error', text: res.error || 'Migration failed' });
+      }
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err?.message || 'Migration error' });
+    } finally {
+      setMigrationRunning(false);
+    }
+  };
 
   useEffect(() => {
     setNotifPermission(getNotificationPermission());
@@ -381,6 +409,103 @@ export default function ProfileSection({
             </ol>
           </div>
         )}
+      </div>
+
+      {/* Firebase Cloud Firestore Free Tier Migration Card */}
+      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-black text-white rounded-xl">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs sm:text-sm font-bold text-zinc-950">
+                Firebase Cloud Firestore (Spark Free Tier)
+              </h3>
+              <p className="text-[10px] sm:text-xs text-zinc-500">
+                100% permanently free ($0/mo) • Never sleeps • Native IndexedDB offline sync
+              </p>
+            </div>
+          </div>
+
+          <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-zinc-100 text-zinc-800 border border-zinc-200 w-fit">
+            Spark Plan Guaranteed
+          </span>
+        </div>
+
+        <div className="text-xs text-zinc-600 space-y-2">
+          <p>
+            Unlike Supabase which pauses databases after 7 days of inactivity, Google Cloud Firestore
+            operates permanently at \$0/mo with 50,000 free reads/day, instant offline writes, and zero sleep timeouts.
+          </p>
+        </div>
+
+        {/* Migration Trigger & Progress */}
+        <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-bold text-zinc-950 block">
+                1-Click Supabase &rarr; Firebase Migration
+              </span>
+              <span className="text-[11px] text-zinc-500 block">
+                Transfers transactions, liquid wallets, tabs, dues &amp; budget without data loss.
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleStartMigration}
+              disabled={migrationRunning}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-black hover:bg-zinc-800 disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-all shadow-xs shrink-0 cursor-pointer"
+            >
+              {migrationRunning ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Migrating Data...</span>
+                </>
+              ) : (
+                <>
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>Migrate to Firebase</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {migrationProgress && (
+            <div className="p-2.5 bg-white border border-zinc-200 rounded-lg text-xs font-mono text-zinc-700 flex items-center gap-2">
+              <RefreshCw className={`w-3.5 h-3.5 ${migrationRunning ? 'animate-spin text-black' : 'text-zinc-400'}`} />
+              <span>{migrationProgress}</span>
+            </div>
+          )}
+
+          {migrationResult && migrationResult.success && (
+            <div className="p-3 bg-zinc-100 rounded-lg border border-zinc-300 space-y-1.5 text-xs text-zinc-900">
+              <div className="flex items-center gap-1.5 font-bold">
+                <Check className="w-4 h-4 text-black" />
+                <span>Migration Completed Successfully!</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
+                <div className="bg-white p-2 rounded border border-zinc-200">
+                  <span className="text-zinc-500 block">Transactions</span>
+                  <span className="font-bold">{migrationResult.counts.transactions}</span>
+                </div>
+                <div className="bg-white p-2 rounded border border-zinc-200">
+                  <span className="text-zinc-500 block">Monthly Dues</span>
+                  <span className="font-bold">{migrationResult.counts.dues}</span>
+                </div>
+                <div className="bg-white p-2 rounded border border-zinc-200">
+                  <span className="text-zinc-500 block">Social Tabs</span>
+                  <span className="font-bold">{migrationResult.counts.tabs}</span>
+                </div>
+                <div className="bg-white p-2 rounded border border-zinc-200">
+                  <span className="text-zinc-500 block">Liquid Wallets</span>
+                  <span className="font-bold">Synced</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* User Account / Login Card */}

@@ -3,8 +3,8 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { parseBankSms, ParsedSmsTransaction } from '@/lib/parser/smsParser';
-import { formatCurrency } from '@/lib/utils';
-import { X, MessageSquare, Clipboard, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
+import { DEFAULT_CATEGORIES, PaymentMethod, TransactionType } from '@/lib/types';
+import { X, MessageSquare, Clipboard, ArrowRight, CheckCircle2, AlertCircle, Edit3 } from 'lucide-react';
 
 interface PasteSmsModalProps {
   isOpen: boolean;
@@ -47,7 +47,7 @@ export default function PasteSmsModal({
       setParsed(result);
     } else {
       setParsed(null);
-      setError('Could not detect amount or transaction details. Try editing or entering manually.');
+      setError('Could not detect amount or transaction details. Try entering or editing manually.');
     }
   };
 
@@ -55,6 +55,17 @@ export default function PasteSmsModal({
     const val = e.target.value;
     setSmsText(val);
     processText(val);
+  };
+
+  const handleUpdateParsedField = <K extends keyof ParsedSmsTransaction>(
+    field: K,
+    value: ParsedSmsTransaction[K]
+  ) => {
+    if (!parsed) return;
+    setParsed({
+      ...parsed,
+      [field]: value,
+    });
   };
 
   const handleApply = () => {
@@ -65,6 +76,10 @@ export default function PasteSmsModal({
       onClose();
     }
   };
+
+  const currentCategoryList = parsed
+    ? DEFAULT_CATEGORIES[parsed.type] || DEFAULT_CATEGORIES.expense
+    : DEFAULT_CATEGORIES.expense;
 
   return (
     <AnimatePresence>
@@ -96,7 +111,7 @@ export default function PasteSmsModal({
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-zinc-950">Paste Bank / UPI SMS</h3>
-                  <p className="text-[11px] text-zinc-500">1-Tap instant transaction extraction</p>
+                  <p className="text-[11px] text-zinc-500">Instant extraction with editable fields</p>
                 </div>
               </div>
               <motion.button
@@ -131,49 +146,110 @@ export default function PasteSmsModal({
               />
             </div>
 
-            {/* Parsed Result Preview */}
+            {/* Parsed & Inline Editable Result Preview */}
             {parsed && (
-              <div className="p-3.5 bg-zinc-100/70 rounded-2xl border border-zinc-300/80 space-y-2.5">
+              <div className="p-3.5 bg-zinc-50 rounded-2xl border border-zinc-200 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] uppercase font-mono tracking-wider text-zinc-500 flex items-center gap-1">
                     <CheckCircle2 className="w-3.5 h-3.5 text-black" />
-                    Detected Transaction
+                    Detected &amp; Editable Fields
                   </span>
-                  <span
-                    className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-md ${
-                      parsed.type === 'expense'
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-emerald-100 text-emerald-700'
-                    }`}
-                  >
-                    {parsed.type.toUpperCase()}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleUpdateParsedField(
+                          'type',
+                          parsed.type === 'expense' ? 'income' : 'expense'
+                        )
+                      }
+                      className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-md cursor-pointer transition-colors ${
+                        parsed.type === 'expense'
+                          ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                          : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                      }`}
+                    >
+                      {parsed.type.toUpperCase()} (Click to toggle)
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-[10px] text-zinc-500 block">Amount</span>
-                    <span className="text-base font-mono font-black text-zinc-950">
-                      {formatCurrency(parsed.amount)}
-                    </span>
+                <div className="grid grid-cols-2 gap-2.5 text-xs">
+                  {/* Editable Amount */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-500 flex items-center gap-1 font-semibold">
+                      <Edit3 className="w-2.5 h-2.5" /> Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={parsed.amount === 0 ? '' : parsed.amount}
+                      onChange={(e) =>
+                        handleUpdateParsedField('amount', parseFloat(e.target.value) || 0)
+                      }
+                      className="w-full p-2 bg-white border border-zinc-300 rounded-xl font-mono font-bold text-sm text-zinc-950 focus:outline-none focus:ring-2 focus:ring-black"
+                    />
                   </div>
-                  <div>
-                    <span className="text-[10px] text-zinc-500 block">Category</span>
-                    <span className="font-semibold text-zinc-900 truncate block">
-                      {parsed.category}
-                    </span>
+
+                  {/* Editable Category */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-500 flex items-center gap-1 font-semibold">
+                      <Edit3 className="w-2.5 h-2.5" /> Category
+                    </label>
+                    <select
+                      value={parsed.category}
+                      onChange={(e) => handleUpdateParsedField('category', e.target.value)}
+                      className="w-full p-2 bg-white border border-zinc-300 rounded-xl text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black"
+                    >
+                      {currentCategoryList.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                      {!currentCategoryList.includes(parsed.category) && (
+                        <option value={parsed.category}>{parsed.category}</option>
+                      )}
+                    </select>
                   </div>
-                  <div>
-                    <span className="text-[10px] text-zinc-500 block">Description / Payee</span>
-                    <span className="font-semibold text-zinc-900 truncate block">
-                      {parsed.description}
-                    </span>
+
+                  {/* Editable Description / Payee */}
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-[10px] text-zinc-500 flex items-center gap-1 font-semibold">
+                      <Edit3 className="w-2.5 h-2.5" /> Payee / Description
+                    </label>
+                    <input
+                      type="text"
+                      value={parsed.description}
+                      onChange={(e) => handleUpdateParsedField('description', e.target.value)}
+                      className="w-full p-2 bg-white border border-zinc-300 rounded-xl text-xs font-medium text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black"
+                    />
                   </div>
-                  <div>
-                    <span className="text-[10px] text-zinc-500 block">Payment Method</span>
-                    <span className="font-semibold text-zinc-900 block">
-                      {parsed.paymentMethod}
-                    </span>
+
+                  {/* Editable Payment Method */}
+                  <div className="col-span-2 space-y-1">
+                    <label className="text-[10px] text-zinc-500 block font-semibold">
+                      Payment Method
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(['UPI / Bank', 'Cash', 'Card'] as PaymentMethod[]).map((method) => {
+                        const isSelected = parsed.paymentMethod === method;
+                        return (
+                          <button
+                            key={method}
+                            type="button"
+                            onClick={() => handleUpdateParsedField('paymentMethod', method)}
+                            className={`py-1.5 px-2 rounded-xl text-xs font-medium border text-center transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-black text-white border-black font-semibold'
+                                : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-100'
+                            }`}
+                          >
+                            {method}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -199,7 +275,7 @@ export default function PasteSmsModal({
               <motion.button
                 whileTap={{ scale: 0.96 }}
                 type="button"
-                disabled={!parsed}
+                disabled={!parsed || parsed.amount <= 0}
                 onClick={handleApply}
                 className="px-5 py-2 bg-black hover:bg-zinc-800 disabled:opacity-40 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
               >

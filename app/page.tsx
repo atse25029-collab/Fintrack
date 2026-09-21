@@ -19,6 +19,7 @@ import TabsManager from '@/components/tabs/TabsManager';
 import TabModal from '@/components/tabs/TabModal';
 import MonthlyDuesManager from '@/components/dues/MonthlyDuesManager';
 import MonthlyDueModal from '@/components/dues/MonthlyDueModal';
+import AssistantView from '@/components/assistant/AssistantView';
 import AnalyticsView from '@/components/analytics/AnalyticsView';
 import ProfileSection from '@/components/profile/ProfileSection';
 import PasteSmsModal from '@/components/daily/PasteSmsModal';
@@ -801,6 +802,20 @@ export default function HomePage() {
     [handleSaveTransaction, applyWalletImpact, syncFullStateToCloud]
   );
 
+  const handleAssistantSettleTab = useCallback(
+    (personName: string, amount?: number) => {
+      const match = tabs.find(
+        (t) =>
+          t.status === 'pending' &&
+          t.personName.toLowerCase().includes(personName.toLowerCase().trim())
+      );
+      if (match) {
+        handleSettleTab(match, 'UPI / Bank', true);
+      }
+    },
+    [tabs, handleSettleTab]
+  );
+
   const handleDeleteTab = useCallback(
     (id: string) => {
       setTabs((prev) => {
@@ -1190,7 +1205,30 @@ export default function HomePage() {
             </motion.div>
           )}
 
-          {/* VIEW 2: TABS (LENT & BORROWED / SPLITS) */}
+          {/* VIEW 2: AI COPILOT & KNOWLEDGE GRAPH */}
+          {currentSection === 'assistant' && (
+            <motion.div
+              key="assistant"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="w-full max-w-full overflow-hidden"
+            >
+              <AssistantView
+                transactions={transactions}
+                wallets={wallets}
+                dues={dues}
+                tabs={tabs}
+                budget={budget}
+                onAddTransaction={(tx) => handleSaveTransaction(tx)}
+                onSettleTab={handleAssistantSettleTab}
+                onUpdateWallets={handleSaveWallets}
+              />
+            </motion.div>
+          )}
+
+          {/* VIEW 3: TABS (LENT & BORROWED / SPLITS) */}
           {currentSection === 'tabs' && (
             <motion.div
               key="tabs"
@@ -1217,7 +1255,7 @@ export default function HomePage() {
             </motion.div>
           )}
 
-          {/* VIEW 3: MONTHLY DUES (RECURRING BILLS & REMINDERS) */}
+          {/* VIEW 4: MONTHLY DUES (RECURRING BILLS & REMINDERS) */}
           {currentSection === 'dues' && (
             <motion.div
               key="dues"
@@ -1244,7 +1282,7 @@ export default function HomePage() {
             </motion.div>
           )}
 
-          {/* VIEW 4: DEDICATED ANALYTICS */}
+          {/* VIEW 5: DEDICATED ANALYTICS */}
           {currentSection === 'analytics' && (
             <motion.div
               key="analytics"
@@ -1257,7 +1295,12 @@ export default function HomePage() {
               <AnalyticsView
                 transactions={transactions}
                 budget={budget}
+                wallets={wallets}
+                dues={dues}
+                tabs={tabs}
                 onOpenStatement={() => setIsStatementOpen(true)}
+                onNavigateToAssistant={() => setCurrentSection('assistant')}
+                onNavigateToTabs={() => setCurrentSection('tabs')}
               />
             </motion.div>
           )}

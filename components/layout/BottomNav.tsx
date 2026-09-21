@@ -1,7 +1,7 @@
 'use client';
 
 import { motion, AnimatePresence } from 'motion/react';
-import { LayoutDashboard, Users, Calendar, BarChart3, User } from 'lucide-react';
+import { LayoutDashboard, Sparkles, Users, Calendar, BarChart3, User } from 'lucide-react';
 import { AppSection } from './Header';
 
 interface BottomNavProps {
@@ -20,6 +20,11 @@ export default function BottomNav({
       id: 'daily' as AppSection,
       label: 'Home',
       icon: LayoutDashboard,
+    },
+    {
+      id: 'assistant' as AppSection,
+      label: 'AI Copilot',
+      icon: Sparkles,
     },
     {
       id: 'tabs' as AppSection,
