@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { User } from '@supabase/supabase-js';
+import { User as SupabaseUser } from '@supabase/supabase-js';
+import { User as FirebaseUser } from 'firebase/auth';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import {
   getCurrentUser,
@@ -12,6 +13,18 @@ import {
   uploadLocalDataToCloud,
   fetchAllCloudData,
 } from '@/lib/supabase/dbService';
+import {
+  getCurrentFirebaseUser,
+  subscribeToAuth as subscribeToFirebaseAuth,
+  loginWithGoogle,
+  logoutUser as logoutFirebaseUser,
+  getActiveFirebaseUid,
+} from '@/lib/firebase/authService';
+import {
+  fetchAllFirebaseUserData,
+} from '@/lib/firebase/dbService';
+import { triggerImmediateFirebaseUpload } from '@/lib/firebase/realtimeSync';
+import { isFirebaseConfigured } from '@/lib/firebase/config';
 import {
   Transaction,
   WalletBalances,
@@ -43,6 +56,9 @@ import {
   Sun,
   FileText,
   HardDrive,
+  Sparkles,
+  ArrowRight,
+  Check,
 } from 'lucide-react';
 import {
   isNotificationSupported,
@@ -55,8 +71,6 @@ import {
 } from '@/lib/notifications/notificationService';
 import { getStoredTheme, applyTheme, ThemeMode } from '@/lib/theme/themeService';
 import { runSupabaseToFirebaseMigration, MigrationReport } from '@/lib/migration/supabaseToFirebase';
-import { isFirebaseConfigured } from '@/lib/firebase/config';
-import { Sparkles, ArrowRight, Check } from 'lucide-react';
 
 interface ProfileSectionProps {
   transactions: Transaction[];
@@ -88,7 +102,8 @@ export default function ProfileSection({
   onClearAllData,
   onOpenStatement,
 }: ProfileSectionProps) {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(() => getCurrentFirebaseUser());
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -152,6 +167,13 @@ export default function ProfileSection({
     setNotifPermission(getNotificationPermission());
     setNotifPrefs(getNotificationPreferences());
     setTheme(getStoredTheme());
+
+    if (isFirebaseConfigured()) {
+      const unsub = subscribeToFirebaseAuth((u) => {
+        setFirebaseUser(u);
+      });
+      return () => unsub();
+    }
   }, []);
 
   const handleSetTheme = (newTheme: ThemeMode) => {
@@ -325,6 +347,99 @@ export default function ProfileSection({
     }
   };
 
+  const handleUploadToFirebase = async () => {
+    setSyncing(true);
+    setMessage(null);
+    try {
+      const uid = firebaseUser?.uid || getActiveFirebaseUid();
+      await triggerImmediateFirebaseUpload(uid, {
+        transactions,
+        wallets,
+        tabs,
+        dues,
+        presets,
+        budget,
+      });
+      setLastSyncedTime(new Date().toLocaleTimeString());
+      setMessage({
+        type: 'success',
+        text: `Firebase Cloud Firestore backup complete! ${transactions.length} transactions, ${dues.length} dues, and ${tabs.length} tabs synced to Spark tier.`,
+      });
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: err?.message || 'Firebase backup failed.',
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleDownloadFromFirebase = async () => {
+    setSyncing(true);
+    setMessage(null);
+    try {
+      const uid = firebaseUser?.uid || getActiveFirebaseUid();
+      const cloudData = await fetchAllFirebaseUserData(uid);
+      if (cloudData && (cloudData.transactions.length > 0 || cloudData.wallets || cloudData.dues.length > 0)) {
+        onCloudSyncSuccess({
+          transactions: cloudData.transactions,
+          wallets: cloudData.wallets || undefined,
+          dues: cloudData.dues,
+          tabs: cloudData.tabs,
+          presets: cloudData.presets,
+          budget: cloudData.budget || undefined,
+        });
+        setLastSyncedTime(new Date().toLocaleTimeString());
+        setMessage({
+          type: 'success',
+          text: `Firebase restore complete! Retrieved ${cloudData.transactions.length} transactions, ${cloudData.dues.length} dues, and ${cloudData.tabs.length} tabs from Cloud Firestore.`,
+        });
+      } else {
+        setMessage({
+          type: 'error',
+          text: 'No cloud data found in Firestore under your account yet. Use "Upload Ledger to Firebase" to push your data.',
+        });
+      }
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: `Firebase download failed: ${err?.message || 'Check database connection'}.`,
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const user = await loginWithGoogle();
+      if (user) {
+        setFirebaseUser(user);
+        setMessage({ type: 'success', text: `Signed in with Google as ${user.displayName || user.email}.` });
+      }
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err?.message || 'Google sign-in failed' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFirebaseSignOut = async () => {
+    setLoading(true);
+    try {
+      await logoutFirebaseUser();
+      setFirebaseUser(null);
+      setMessage({ type: 'success', text: 'Signed out of Firebase account.' });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err?.message || 'Sign-out failed' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-4 sm:space-y-6 w-full max-w-full overflow-hidden">
       {/* Header */}
@@ -336,7 +451,7 @@ export default function ProfileSection({
           </h2>
         </div>
         <p className="text-xs text-zinc-500">
-          Manage your account, multi-device PostgreSQL backup, and sync preferences
+          Manage your account, permanent Firebase cloud database, and sync preferences
         </p>
       </div>
 
@@ -357,73 +472,7 @@ export default function ProfileSection({
         </div>
       )}
 
-      {/* Cloud Database Status Card */}
-      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-zinc-100 rounded-xl">
-              <Database className="w-4 h-4 text-black" />
-            </div>
-            <div>
-              <h3 className="text-xs sm:text-sm font-bold text-zinc-950">
-                Supabase PostgreSQL Database
-              </h3>
-              <p className="text-[10px] sm:text-xs text-zinc-500">
-                {isSupabaseConfigured
-                  ? 'Connected to serverless cloud database'
-                  : 'Operating in local offline-first storage mode'}
-              </p>
-            </div>
-          </div>
-
-          <span
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold border ${
-              isSupabaseConfigured
-                ? 'bg-zinc-100 text-black border-zinc-300'
-                : 'bg-zinc-50 text-zinc-600 border-zinc-200'
-            }`}
-          >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                isSupabaseConfigured ? 'bg-black animate-pulse' : 'bg-zinc-400'
-              }`}
-            />
-            <span>{isSupabaseConfigured ? 'Connected' : 'Local Mode'}</span>
-          </span>
-        </div>
-
-        {!isSupabaseConfigured && (
-          <div className="p-3 bg-zinc-50 rounded-xl border border-dashed border-zinc-300 text-xs text-zinc-600 space-y-1.5">
-            <p className="font-semibold text-zinc-900">
-              How to connect your free Supabase database:
-            </p>
-            <ol className="list-decimal list-inside space-y-1 text-[11px] text-zinc-600">
-              <li>
-                Create a 100% free project at{' '}
-                <a
-                  href="https://supabase.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium underline text-black inline-flex items-center gap-0.5"
-                >
-                  supabase.com <ExternalLink className="w-2.5 h-2.5" />
-                </a>
-              </li>
-              <li>
-                In Supabase <strong>SQL Editor</strong>, run the script from{' '}
-                <code className="bg-zinc-200 px-1 rounded font-mono">supabase/schema.sql</code>
-              </li>
-              <li>
-                Add <code className="bg-zinc-200 px-1 rounded font-mono">NEXT_PUBLIC_SUPABASE_URL</code>{' '}
-                and <code className="bg-zinc-200 px-1 rounded font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>{' '}
-                to your Vercel project settings or <code className="bg-zinc-200 px-1 rounded font-mono">.env.local</code>
-              </li>
-            </ol>
-          </div>
-        )}
-      </div>
-
-      {/* Firebase Cloud Firestore Free Tier Migration Card */}
+      {/* 1. PRIMARY LIVE DATABASE: Firebase Cloud Firestore */}
       <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 pb-3">
           <div className="flex items-center gap-2">
@@ -431,28 +480,97 @@ export default function ProfileSection({
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-xs sm:text-sm font-bold text-zinc-950">
-                Firebase Cloud Firestore (Spark Free Tier)
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs sm:text-sm font-bold text-zinc-950">
+                  Firebase Cloud Firestore
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-black text-white">
+                  Active Primary
+                </span>
+              </div>
               <p className="text-[10px] sm:text-xs text-zinc-500">
-                100% permanently free ($0/mo) • Never sleeps • Native IndexedDB offline sync
+                100% permanently free ($0/mo Spark Tier) • Zero timeout • Multi-device real-time sync
               </p>
             </div>
           </div>
 
-          <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-zinc-100 text-zinc-800 border border-zinc-200 w-fit">
-            Spark Plan Guaranteed
+          <span
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold border ${
+              isFirebaseConfigured()
+                ? 'bg-zinc-100 text-black border-zinc-300'
+                : 'bg-zinc-50 text-zinc-600 border-zinc-200'
+            } w-fit`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isFirebaseConfigured() ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'
+              }`}
+            />
+            <span>{isFirebaseConfigured() ? 'Connected & Active' : 'Local Mode'}</span>
           </span>
         </div>
 
-        <div className="text-xs text-zinc-600 space-y-2">
-          <p>
-            Unlike Supabase which pauses databases after 7 days of inactivity, Google Cloud Firestore
-            operates permanently at \$0/mo with 50,000 free reads/day, instant offline writes, and zero sleep timeouts.
-          </p>
+        {/* Active Account / Session info */}
+        <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-3.5 h-3.5 text-black" />
+              <span className="font-bold text-zinc-900">
+                {firebaseUser?.email || (firebaseUser?.isAnonymous ? 'Spark Free Tier Session (Protected)' : 'Active Cloud Session')}
+              </span>
+            </div>
+            <p className="text-[10px] font-mono text-zinc-500 truncate max-w-sm">
+              UID: {firebaseUser?.uid || getActiveFirebaseUid()}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {!firebaseUser || firebaseUser.isAnonymous ? (
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                disabled={loading}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-black hover:bg-zinc-800 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+              >
+                <LogIn className="w-3 h-3" />
+                <span>Link Google Account</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleFirebaseSignOut}
+                disabled={loading}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-800 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+              >
+                <LogOut className="w-3 h-3" />
+                <span>Sign Out</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Migration Trigger & Progress */}
+        {/* Two-Way Push & Pull to Firebase */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+          <button
+            onClick={handleUploadToFirebase}
+            disabled={syncing || !isFirebaseConfigured()}
+            className="flex items-center justify-center gap-2 p-3 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
+          >
+            <UploadCloud className="w-4 h-4 text-black" />
+            <span>Upload Ledger to Firebase</span>
+          </button>
+
+          <button
+            onClick={handleDownloadFromFirebase}
+            disabled={syncing || !isFirebaseConfigured()}
+            className="flex items-center justify-center gap-2 p-3 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
+          >
+            <DownloadCloud className="w-4 h-4 text-black" />
+            <span>Restore Ledger from Firebase</span>
+          </button>
+        </div>
+
+        {/* Migration / Sync from Supabase */}
         <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200 space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
@@ -460,7 +578,7 @@ export default function ProfileSection({
                 1-Click Supabase &rarr; Firebase Migration
               </span>
               <span className="text-[11px] text-zinc-500 block">
-                Transfers transactions, liquid wallets, tabs, dues &amp; budget without data loss.
+                Transfers transactions, liquid wallets, tabs, dues &amp; presets directly into Cloud Firestore.
               </span>
             </div>
 
@@ -478,7 +596,7 @@ export default function ProfileSection({
               ) : (
                 <>
                   <UploadCloud className="w-3.5 h-3.5" />
-                  <span>Migrate to Firebase</span>
+                  <span>Re-run Migration</span>
                 </>
               )}
             </button>
@@ -517,6 +635,60 @@ export default function ProfileSection({
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 2. ARCHIVED BACKUP DATABASE: Supabase PostgreSQL */}
+      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-3 opacity-90">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-zinc-100 rounded-xl">
+              <Database className="w-4 h-4 text-zinc-600" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs sm:text-sm font-bold text-zinc-900">
+                  Supabase PostgreSQL Database
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-zinc-200 text-zinc-700">
+                  Archived / Dormant (Option A)
+                </span>
+              </div>
+              <p className="text-[10px] sm:text-xs text-zinc-500">
+                Retired as the active engine • Preserved for manual cold export/import
+              </p>
+            </div>
+          </div>
+
+          <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold bg-zinc-100 text-zinc-600 border border-zinc-200">
+            Dormant Backup
+          </span>
+        </div>
+
+        <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200 text-xs text-zinc-600 space-y-1.5">
+          <p>
+            Supabase has been retired from active day-to-day operations under <strong>Option A</strong>. FinTrack now operates natively on Google Cloud Firestore Spark tier (0 dormancy timeout, offline-first).
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+          <button
+            onClick={handleUploadToCloud}
+            disabled={syncing || !isSupabaseConfigured}
+            className="flex items-center justify-center gap-2 p-2.5 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-700 transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
+          >
+            <UploadCloud className="w-3.5 h-3.5 text-zinc-600" />
+            <span>Push Cold Backup to Supabase</span>
+          </button>
+
+          <button
+            onClick={handleDownloadFromCloud}
+            disabled={syncing || !isSupabaseConfigured}
+            className="flex items-center justify-center gap-2 p-2.5 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-700 transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
+          >
+            <DownloadCloud className="w-3.5 h-3.5 text-zinc-600" />
+            <span>Pull Cold Backup from Supabase</span>
+          </button>
         </div>
       </div>
 
@@ -788,46 +960,6 @@ export default function ProfileSection({
         )}
       </div>
 
-      {/* Cloud Two-Way Sync Actions */}
-      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-zinc-100 rounded-xl text-black">
-              <Cloud className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-xs sm:text-sm font-bold text-zinc-950">
-                Two-Way Cloud Synchronization
-              </h3>
-              <p className="text-[10px] sm:text-xs text-zinc-500">
-                {lastSyncedTime ? `Last synced at ${lastSyncedTime}` : 'Sync local device with PostgreSQL'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-          {/* Push Local Data to Cloud */}
-          <button
-            onClick={handleUploadToCloud}
-            disabled={syncing || !isSupabaseConfigured}
-            className="flex items-center justify-center gap-2 p-3 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 transition-all active:scale-98 disabled:opacity-50"
-          >
-            <UploadCloud className="w-4 h-4 text-black" />
-            <span>Upload Local Ledger to Cloud</span>
-          </button>
-
-          {/* Pull Cloud Data to Device */}
-          <button
-            onClick={handleDownloadFromCloud}
-            disabled={syncing || !isSupabaseConfigured}
-            className="flex items-center justify-center gap-2 p-3 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 transition-all active:scale-98 disabled:opacity-50"
-          >
-            <DownloadCloud className="w-4 h-4 text-black" />
-            <span>Download Cloud Data to Device</span>
-          </button>
-        </div>
-      </div>
 
       {/* AMOLED Theme & Appearance Card */}
       <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-3">

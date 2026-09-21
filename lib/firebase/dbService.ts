@@ -2,6 +2,7 @@ import {
   doc,
   setDoc,
   getDoc,
+  deleteDoc,
   collection,
   getDocs,
   writeBatch,
@@ -137,6 +138,14 @@ export async function saveTransactionToFirebase(
   await setDoc(docRef, sanitizeForFirestore({ ...tx, updatedAt: Date.now() }), { merge: true });
 }
 
+export async function deleteTransactionFromFirebase(uid: string, id: string): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  const docRef = doc(db, `users/${uid}/transactions`, id);
+  await deleteDoc(docRef);
+}
+
 /**
  * Fetch all transactions for user
  */
@@ -170,6 +179,22 @@ export async function syncDuesToFirebase(uid: string, dues: MonthlyDue[]): Promi
   await batch.commit();
 }
 
+export async function saveDueToFirebase(uid: string, due: MonthlyDue): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  const ref = doc(db, `users/${uid}/monthly_dues`, due.id);
+  await setDoc(ref, sanitizeForFirestore({ ...due, updatedAt: Date.now() }), { merge: true });
+}
+
+export async function deleteDueFromFirebase(uid: string, id: string): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  const ref = doc(db, `users/${uid}/monthly_dues`, id);
+  await deleteDoc(ref);
+}
+
 export async function fetchDuesFromFirebase(uid: string): Promise<MonthlyDue[]> {
   const db = getFirestoreDb();
   if (!db) return [];
@@ -196,6 +221,22 @@ export async function syncTabsToFirebase(uid: string, tabs: TabItem[]): Promise<
     batch.set(ref, sanitizeForFirestore({ ...tab, updatedAt: Date.now() }), { merge: true });
   });
   await batch.commit();
+}
+
+export async function saveTabToFirebase(uid: string, tab: TabItem): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  const ref = doc(db, `users/${uid}/tabs`, tab.id);
+  await setDoc(ref, sanitizeForFirestore({ ...tab, updatedAt: Date.now() }), { merge: true });
+}
+
+export async function deleteTabFromFirebase(uid: string, id: string): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  const ref = doc(db, `users/${uid}/tabs`, id);
+  await deleteDoc(ref);
 }
 
 export async function fetchTabsFromFirebase(uid: string): Promise<TabItem[]> {
@@ -237,6 +278,36 @@ export async function fetchPresetsFromFirebase(uid: string): Promise<QuickPreset
     list.push(d.data() as QuickPreset);
   });
   return list;
+}
+
+/**
+ * Fetch all user data in parallel from Firebase
+ */
+export async function fetchAllFirebaseUserData(uid: string): Promise<{
+  transactions: Transaction[];
+  wallets: WalletBalances | null;
+  dues: MonthlyDue[];
+  tabs: TabItem[];
+  budget: BudgetConfig | null;
+  presets: QuickPreset[];
+}> {
+  const [transactions, wallets, dues, tabs, budget, presets] = await Promise.all([
+    fetchTransactionsFromFirebase(uid),
+    fetchWalletsFromFirebase(uid),
+    fetchDuesFromFirebase(uid),
+    fetchTabsFromFirebase(uid),
+    fetchBudgetFromFirebase(uid),
+    fetchPresetsFromFirebase(uid),
+  ]);
+
+  return {
+    transactions,
+    wallets,
+    dues,
+    tabs,
+    budget,
+    presets,
+  };
 }
 
 /**
@@ -307,3 +378,56 @@ export async function batchMigrateAllUserData(
     },
   };
 }
+
+/**
+ * Save analytics snapshot for user to Firebase
+ */
+export async function syncAnalyticsSnapshotToFirebase(
+  uid: string,
+  stats: any,
+  dailySummary: any,
+  cashflow: any,
+  categoryExpenses: any,
+  categoryIncomes: any
+): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+  const today = new Date().toISOString().split('T')[0];
+  const docRef = doc(db, `users/${uid}/analytics`, today);
+  await setDoc(
+    docRef,
+    sanitizeForFirestore({
+      snapshotDate: today,
+      stats,
+      dailySummary,
+      cashflow,
+      categoryExpenses,
+      categoryIncomes,
+      updatedAt: Date.now(),
+    }),
+    { merge: true }
+  );
+}
+
+/**
+ * Clear all data for a specific user from Cloud Firestore
+ */
+export async function clearAllFirebaseUserData(uid: string): Promise<void> {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  const collectionsToClear = ['transactions', 'monthly_dues', 'tabs', 'presets'];
+  for (const colName of collectionsToClear) {
+    const colRef = collection(db, `users/${uid}/${colName}`);
+    const snap = await getDocs(colRef);
+    if (!snap.empty) {
+      const batch = writeBatch(db);
+      snap.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  }
+
+  // Reset wallets to 0
+  await syncWalletsToFirebase(uid, { cashInHand: 0, accountBalance: 0, lastUpdated: Date.now() });
+}
+

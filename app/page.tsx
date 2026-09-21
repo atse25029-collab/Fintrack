@@ -28,26 +28,31 @@ import MonthlyStatementModal from '@/components/analytics/MonthlyStatementModal'
 import { getStoredTheme, applyTheme } from '@/lib/theme/themeService';
 import { ParsedSmsTransaction } from '@/lib/parser/smsParser';
 import { checkAndNotifyUpcomingDuesAndTabs } from '@/lib/notifications/notificationService';
-import { isSupabaseConfigured } from '@/lib/supabase/client';
+import { isFirebaseConfigured } from '@/lib/firebase/config';
 import {
-  startContinuousCloudSync,
-  triggerImmediateCloudUpload,
-  updateLocalChecksum,
+  getOrInitFirebaseUser,
+  getActiveFirebaseUid,
+  subscribeToAuth,
+} from '@/lib/firebase/authService';
+import {
+  startFirebaseRealtimeSync,
+  triggerImmediateFirebaseUpload,
   FullAppData,
-} from '@/lib/supabase/realtimeSync';
+} from '@/lib/firebase/realtimeSync';
 import {
-  fetchAllCloudData,
-  syncTransactionToCloud,
-  deleteTransactionFromCloud,
-  syncDueToCloud,
-  deleteDueFromCloud,
-  syncTabToCloud,
-  deleteTabFromCloud,
-  syncWalletsToCloud,
-  syncBudgetToCloud,
-  syncPresetsToCloud,
-  syncAnalyticsSnapshotToCloud,
-} from '@/lib/supabase/dbService';
+  fetchAllFirebaseUserData,
+  saveTransactionToFirebase,
+  deleteTransactionFromFirebase,
+  saveDueToFirebase,
+  deleteDueFromFirebase,
+  saveTabToFirebase,
+  deleteTabFromFirebase,
+  syncWalletsToFirebase,
+  syncBudgetToFirebase,
+  syncPresetsToFirebase,
+  syncAnalyticsSnapshotToFirebase,
+  clearAllFirebaseUserData,
+} from '@/lib/firebase/dbService';
 
 import {
   Transaction,
@@ -97,6 +102,7 @@ import { Plus } from 'lucide-react';
 
 export default function HomePage() {
   const [currentSection, setCurrentSection] = useState<AppSection>('daily');
+  const [firebaseUid, setFirebaseUid] = useState<string>(() => getActiveFirebaseUid());
 
   // Core Data
   const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
@@ -127,12 +133,10 @@ export default function HomePage() {
   const [isReceiptScanOpen, setIsReceiptScanOpen] = useState(false);
   const [isStatementOpen, setIsStatementOpen] = useState(false);
 
-
-  // Initial load from storage and background sync
+  // Initial load from storage and background Firebase sync
   useEffect(() => {
     // 0. Initialize theme
     applyTheme(getStoredTheme());
-
 
     // 1. Initial load from local device storage
     const initialTxs = getLocalTransactions();
@@ -149,21 +153,55 @@ export default function HomePage() {
     setWallets(initialWallets);
     setPresets(initialPresets);
 
-    // Initialize local checksum to avoid re-rendering on first poll
-    updateLocalChecksum({
-      transactions: initialTxs,
-      budget: initialBudget,
-      tabs: initialTabs,
-      dues: initialDues,
-      wallets: initialWallets,
-      presets: initialPresets,
-    });
+    let stopRealtimeSync: (() => void) | null = null;
 
-    // 2. Fetch latest cloud backup from Supabase if connected
-    if (isSupabaseConfigured) {
-      fetchAllCloudData()
-        .then((cloudData) => {
-          if (cloudData) {
+    // 2. Initialize Firebase user & fetch latest cloud data
+    if (isFirebaseConfigured()) {
+      getOrInitFirebaseUser().then((user) => {
+        const uid = user?.uid || getActiveFirebaseUid();
+        setFirebaseUid(uid);
+
+        // Initial fetch of Firestore data
+        fetchAllFirebaseUserData(uid)
+          .then((cloudData) => {
+            if (cloudData) {
+              if (cloudData.transactions && cloudData.transactions.length > 0) {
+                setTransactions(cloudData.transactions);
+                setLocalTransactions(cloudData.transactions);
+              }
+              if (cloudData.dues && cloudData.dues.length > 0) {
+                setDues(cloudData.dues);
+                setLocalDues(cloudData.dues);
+              }
+              if (cloudData.tabs && cloudData.tabs.length > 0) {
+                setTabs(cloudData.tabs);
+                setLocalTabs(cloudData.tabs);
+              }
+              if (cloudData.wallets) {
+                const localW = getLocalWallets();
+                if ((cloudData.wallets.lastUpdated || 0) >= (localW.lastUpdated || 0)) {
+                  setWallets(cloudData.wallets);
+                  setLocalWallets(cloudData.wallets);
+                }
+              }
+              if (cloudData.presets && cloudData.presets.length > 0) {
+                setPresets(cloudData.presets);
+                setLocalQuickPresets(cloudData.presets);
+              }
+              if (cloudData.budget) {
+                setBudget(cloudData.budget);
+                setLocalBudget(cloudData.budget);
+              }
+            }
+          })
+          .catch((err) => {
+            console.warn('[Firebase] Initial cloud fetch error:', err);
+          });
+
+        // 3. Start Firestore real-time onSnapshot listeners
+        stopRealtimeSync = startFirebaseRealtimeSync({
+          uid,
+          onUpdate: (cloudData) => {
             if (cloudData.transactions && cloudData.transactions.length > 0) {
               setTransactions(cloudData.transactions);
               setLocalTransactions(cloudData.transactions);
@@ -191,13 +229,12 @@ export default function HomePage() {
               setBudget(cloudData.budget);
               setLocalBudget(cloudData.budget);
             }
-            updateLocalChecksum(cloudData);
-          }
-        })
-        .catch(() => {});
+          },
+        });
+      });
     }
 
-    // 3. Background serverless fallback sync
+    // 4. Background serverless fallback sync
     syncWithVercelServer().then((synced) => {
       if (synced) {
         if (synced.transactions?.length) setTransactions(synced.transactions);
@@ -205,40 +242,6 @@ export default function HomePage() {
         if (synced.dues?.length) setDues(synced.dues);
         if (synced.budget) setBudget(synced.budget);
       }
-    });
-
-    // 4. High-frequency continuous cloud retrieval loop (every 2.5s)
-    const stopContinuousSync = startContinuousCloudSync({
-      intervalMs: 2500,
-      onCloudUpdate: (cloudData) => {
-        if (cloudData.transactions && cloudData.transactions.length > 0) {
-          setTransactions(cloudData.transactions);
-          setLocalTransactions(cloudData.transactions);
-        }
-        if (cloudData.dues && cloudData.dues.length > 0) {
-          setDues(cloudData.dues);
-          setLocalDues(cloudData.dues);
-        }
-        if (cloudData.tabs && cloudData.tabs.length > 0) {
-          setTabs(cloudData.tabs);
-          setLocalTabs(cloudData.tabs);
-        }
-        if (cloudData.wallets) {
-          const localW = getLocalWallets();
-          if ((cloudData.wallets.lastUpdated || 0) >= (localW.lastUpdated || 0)) {
-            setWallets(cloudData.wallets);
-            setLocalWallets(cloudData.wallets);
-          }
-        }
-        if (cloudData.presets && cloudData.presets.length > 0) {
-          setPresets(cloudData.presets);
-          setLocalQuickPresets(cloudData.presets);
-        }
-        if (cloudData.budget) {
-          setBudget(cloudData.budget);
-          setLocalBudget(cloudData.budget);
-        }
-      },
     });
 
     const handleStorageChange = () => {
@@ -258,9 +261,8 @@ export default function HomePage() {
     window.addEventListener('fintrack_presets_changed', handleStorageChange);
 
     return () => {
-      stopContinuousSync();
+      if (stopRealtimeSync) stopRealtimeSync();
       window.removeEventListener('fintrack_data_changed', handleStorageChange);
-
       window.removeEventListener('fintrack_budget_changed', handleStorageChange);
       window.removeEventListener('fintrack_tabs_changed', handleStorageChange);
       window.removeEventListener('fintrack_dues_changed', handleStorageChange);
@@ -353,7 +355,7 @@ export default function HomePage() {
       };
 
       setLocalWallets(nextWallets);
-      syncWalletsToCloud(nextWallets);
+      syncWalletsToFirebase(firebaseUid, nextWallets);
       fetch('/api/wallets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -362,13 +364,13 @@ export default function HomePage() {
 
       return nextWallets;
     },
-    []
+    [firebaseUid]
   );
 
   // Instant full-state upload helper ensuring multi-device and cold-start synchronization
   const syncFullStateToCloud = useCallback(
     (overrides?: Partial<FullAppData>) => {
-      triggerImmediateCloudUpload({
+      triggerImmediateFirebaseUpload(firebaseUid, {
         transactions: overrides?.transactions ?? getLocalTransactions(),
         wallets: overrides?.wallets ?? getLocalWallets(),
         tabs: overrides?.tabs ?? getLocalTabs(),
@@ -377,7 +379,7 @@ export default function HomePage() {
         budget: overrides?.budget ?? getLocalBudget(),
       });
     },
-    []
+    [firebaseUid]
   );
 
   // --- Transactions Handlers ---
@@ -488,7 +490,7 @@ export default function HomePage() {
 
         const savedTx = data.id ? updated.find((t) => t.id === data.id)! : updated[0];
         setLocalTransactions(updated);
-        syncTransactionToCloud(savedTx);
+        saveTransactionToFirebase(firebaseUid, savedTx);
 
         fetch('/api/transactions', {
           method: 'POST',
@@ -505,7 +507,7 @@ export default function HomePage() {
         return updated;
       });
     },
-    [applyWalletImpact, syncFullStateToCloud]
+    [applyWalletImpact, syncFullStateToCloud, firebaseUid]
   );
 
   const handleQuickAdd = useCallback(
@@ -600,7 +602,7 @@ export default function HomePage() {
 
         const filtered = prev.filter((t) => t.id !== id);
         setLocalTransactions(filtered);
-        deleteTransactionFromCloud(id);
+        deleteTransactionFromFirebase(firebaseUid, id);
         fetch('/api/transactions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -614,14 +616,14 @@ export default function HomePage() {
         return filtered;
       });
     },
-    [applyWalletImpact, syncFullStateToCloud]
+    [applyWalletImpact, syncFullStateToCloud, firebaseUid]
   );
 
   const handleSaveBudget = useCallback(
     (updated: BudgetConfig) => {
       setBudget(updated);
       setLocalBudget(updated);
-      syncBudgetToCloud(updated);
+      syncBudgetToFirebase(firebaseUid, updated);
       fetch('/api/budget', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -629,7 +631,7 @@ export default function HomePage() {
       }).catch(() => {});
       syncFullStateToCloud({ budget: updated });
     },
-    [syncFullStateToCloud]
+    [syncFullStateToCloud, firebaseUid]
   );
 
   // --- Wallets Handlers ---
@@ -637,7 +639,7 @@ export default function HomePage() {
     (updated: WalletBalances) => {
       setWallets(updated);
       setLocalWallets(updated);
-      syncWalletsToCloud(updated);
+      syncWalletsToFirebase(firebaseUid, updated);
       fetch('/api/wallets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -645,7 +647,7 @@ export default function HomePage() {
       }).catch(() => {});
       syncFullStateToCloud({ wallets: updated });
     },
-    [syncFullStateToCloud]
+    [syncFullStateToCloud, firebaseUid]
   );
 
   // --- Presets Handlers ---
@@ -653,7 +655,7 @@ export default function HomePage() {
     (updated: QuickPreset[]) => {
       setPresets(updated);
       setLocalQuickPresets(updated);
-      syncPresetsToCloud(updated);
+      syncPresetsToFirebase(firebaseUid, updated);
       fetch('/api/presets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -661,19 +663,20 @@ export default function HomePage() {
       }).catch(() => {});
       syncFullStateToCloud({ presets: updated });
     },
-    [syncFullStateToCloud]
+    [syncFullStateToCloud, firebaseUid]
   );
 
   const handleResetPresets = useCallback(() => {
     setPresets(DEFAULT_QUICK_PRESETS);
     setLocalQuickPresets(DEFAULT_QUICK_PRESETS);
+    syncPresetsToFirebase(firebaseUid, DEFAULT_QUICK_PRESETS);
     fetch('/api/presets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'reset' }),
     }).catch(() => {});
     syncFullStateToCloud({ presets: DEFAULT_QUICK_PRESETS });
-  }, [syncFullStateToCloud]);
+  }, [syncFullStateToCloud, firebaseUid]);
 
   // --- Tabs Handlers ---
   const handleSaveTab = useCallback(
@@ -703,7 +706,7 @@ export default function HomePage() {
 
         const savedTab = tabData.id ? updated.find((t) => t.id === tabData.id)! : updated[0];
         setLocalTabs(updated);
-        syncTabToCloud(savedTab);
+        saveTabToFirebase(firebaseUid, savedTab);
         fetch('/api/tabs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -717,7 +720,7 @@ export default function HomePage() {
         return updated;
       });
     },
-    [syncFullStateToCloud]
+    [syncFullStateToCloud, firebaseUid]
   );
 
   const handleSettleTab = useCallback(
@@ -737,7 +740,7 @@ export default function HomePage() {
         );
         const settledTab = updated.find((t) => t.id === tab.id)!;
         setLocalTabs(updated);
-        syncTabToCloud(settledTab);
+        saveTabToFirebase(firebaseUid, settledTab);
         fetch('/api/tabs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -799,7 +802,7 @@ export default function HomePage() {
         });
       }
     },
-    [handleSaveTransaction, applyWalletImpact, syncFullStateToCloud]
+    [handleSaveTransaction, applyWalletImpact, syncFullStateToCloud, firebaseUid]
   );
 
   const handleAssistantSettleTab = useCallback(
@@ -821,7 +824,7 @@ export default function HomePage() {
       setTabs((prev) => {
         const filtered = prev.filter((t) => t.id !== id);
         setLocalTabs(filtered);
-        deleteTabFromCloud(id);
+        deleteTabFromFirebase(firebaseUid, id);
         fetch('/api/tabs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -835,7 +838,7 @@ export default function HomePage() {
         return filtered;
       });
     },
-    [syncFullStateToCloud]
+    [syncFullStateToCloud, firebaseUid]
   );
 
   // --- Monthly Dues Handlers ---
@@ -866,7 +869,7 @@ export default function HomePage() {
 
         const savedDue = dueData.id ? updated.find((d) => d.id === dueData.id)! : updated[0];
         setLocalDues(updated);
-        syncDueToCloud(savedDue);
+        saveDueToFirebase(firebaseUid, savedDue);
         fetch('/api/dues', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -880,7 +883,7 @@ export default function HomePage() {
         return updated;
       });
     },
-    [syncFullStateToCloud]
+    [syncFullStateToCloud, firebaseUid]
   );
 
   const handlePayAndRecordDue = useCallback(
@@ -899,7 +902,7 @@ export default function HomePage() {
         );
         const paidDue = updated.find((d) => d.id === due.id)!;
         setLocalDues(updated);
-        syncDueToCloud(paidDue);
+        saveDueToFirebase(firebaseUid, paidDue);
         fetch('/api/dues', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -927,7 +930,7 @@ export default function HomePage() {
         notes: `Paid on ${realTime.date} at ${realTime.time}`,
       });
     },
-    [handleSaveTransaction, syncFullStateToCloud]
+    [handleSaveTransaction, syncFullStateToCloud, firebaseUid]
   );
 
   const handleDeleteDue = useCallback(
@@ -935,7 +938,7 @@ export default function HomePage() {
       setDues((prev) => {
         const filtered = prev.filter((d) => d.id !== id);
         setLocalDues(filtered);
-        deleteDueFromCloud(id);
+        deleteDueFromFirebase(firebaseUid, id);
         fetch('/api/dues', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -949,7 +952,7 @@ export default function HomePage() {
         return filtered;
       });
     },
-    [syncFullStateToCloud]
+    [syncFullStateToCloud, firebaseUid]
   );
 
   // Bulk Import / Reset
@@ -1026,6 +1029,7 @@ export default function HomePage() {
     setLocalDues([]);
     setWallets({ cashInHand: 0, accountBalance: 0, lastUpdated: Date.now() });
     setLocalWallets({ cashInHand: 0, accountBalance: 0, lastUpdated: Date.now() });
+    clearAllFirebaseUserData(firebaseUid);
     fetch('/api/transactions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1037,7 +1041,7 @@ export default function HomePage() {
       dues: [],
       wallets: { cashInHand: 0, accountBalance: 0, lastUpdated: Date.now() },
     });
-  }, [syncFullStateToCloud]);
+  }, [syncFullStateToCloud, firebaseUid]);
 
   const handleCloudSyncSuccess = useCallback(
     (cloudData: {
@@ -1097,11 +1101,12 @@ export default function HomePage() {
     return reminders.filter((r) => !r.isPaidThisMonth && (r.isOverdue || r.isDueToday)).length;
   }, [dues]);
 
-  // Automatically sync full analytics snapshots to Supabase Cloud whenever data updates
+  // Automatically sync full analytics snapshots to Firebase Cloud whenever data updates
   useEffect(() => {
-    if (isSupabaseConfigured) {
+    if (isFirebaseConfigured()) {
       const timer = setTimeout(() => {
-        syncAnalyticsSnapshotToCloud(
+        syncAnalyticsSnapshotToFirebase(
+          firebaseUid,
           financialStats,
           dailySummary,
           cashflowData,
@@ -1111,7 +1116,7 @@ export default function HomePage() {
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [financialStats, dailySummary, cashflowData, categoryExpenses, categoryIncomes]);
+  }, [firebaseUid, financialStats, dailySummary, cashflowData, categoryExpenses, categoryIncomes]);
 
   return (
     <div className="min-h-screen w-full bg-[#f4f4f5] flex flex-col selection:bg-black selection:text-white">
