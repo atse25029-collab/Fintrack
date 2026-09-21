@@ -171,6 +171,13 @@ export async function runSupabaseToFirebaseMigration(
     if (errMsg.includes('configuration-not-found')) {
       errMsg =
         'Firebase Authentication is not enabled in your Firebase Console yet! Please go to Firebase Console > Build > Authentication > Click "Get started" > Under "Sign-in method" tab, enable "Anonymous" and click Save.';
+    } else if (
+      errMsg.includes('permission') ||
+      errMsg.includes('insufficient permissions') ||
+      err?.code === 'permission-denied'
+    ) {
+      errMsg =
+        'Firestore Security Rules are blocking writes! Please go to Firebase Console > Build > Firestore Database > "Rules" tab, paste the rules below, and click Publish: \n\nallow read, write: if request.auth != null;';
     }
     return {
       success: false,
