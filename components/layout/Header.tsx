@@ -16,6 +16,8 @@ import {
   User,
   Moon,
   Sun,
+  Shield,
+  LogIn,
 } from 'lucide-react';
 import { getStoredTheme, cycleTheme, ThemeMode } from '@/lib/theme/themeService';
 
@@ -31,6 +33,11 @@ interface HeaderProps {
   onOpenExportModal: () => void;
   dueAlertCount?: number;
   onForceSync?: () => void;
+  isAdmin?: boolean;
+  onOpenAdminModal?: () => void;
+  onOpenAuthModal?: () => void;
+  userEmail?: string | null;
+  isLoggedIn?: boolean;
 }
 
 export default function Header({
@@ -41,6 +48,11 @@ export default function Header({
   onOpenExportModal,
   dueAlertCount = 0,
   onForceSync,
+  isAdmin = false,
+  onOpenAdminModal,
+  onOpenAuthModal,
+  userEmail,
+  isLoggedIn = false,
 }: HeaderProps) {
   const [liveTime, setLiveTime] = useState<string>('');
   const [theme, setTheme] = useState<ThemeMode>('light');
@@ -149,6 +161,53 @@ export default function Header({
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <CloudSyncBadge onForceSync={onForceSync} />
           <NativeInstallButton />
+
+          {/* Super Admin Console Button */}
+          {isAdmin && onOpenAdminModal && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onOpenAdminModal}
+              aria-label="Super Admin Console"
+              title="Super Admin Monitoring Console"
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-800 rounded-lg text-xs font-bold transition-all hover:bg-emerald-500/25 shrink-0 cursor-pointer"
+            >
+              <Shield className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden sm:inline text-[11px]">Admin</span>
+            </motion.button>
+          )}
+
+          {/* Account / Sign-In Button */}
+          {onOpenAuthModal && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onOpenAuthModal}
+              aria-label={isLoggedIn ? 'Account Profile' : 'Sign In'}
+              title={isLoggedIn ? `Signed in as ${userEmail}` : 'Sign In with Google'}
+              className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 cursor-pointer ${
+                isLoggedIn
+                  ? 'bg-zinc-200/80 text-zinc-900 hover:bg-zinc-300'
+                  : 'bg-white border border-zinc-300 text-zinc-800 hover:bg-zinc-100 shadow-2xs'
+              }`}
+            >
+              {isLoggedIn ? (
+                <>
+                  <div className="w-4 h-4 rounded-full bg-black text-white text-[9px] flex items-center justify-center font-bold">
+                    {(userEmail || 'U').charAt(0).toUpperCase()}
+                  </div>
+                  <span className="hidden lg:inline text-[11px] max-w-[90px] truncate">
+                    {userEmail?.split('@')[0]}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <LogIn className="w-3.5 h-3.5 text-zinc-700" />
+                  <span className="text-[11px]">Sign In</span>
+                </>
+              )}
+            </motion.button>
+          )}
 
           {/* AMOLED Theme Switcher */}
           <motion.button

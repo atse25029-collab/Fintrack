@@ -25,6 +25,9 @@ import ProfileSection from '@/components/profile/ProfileSection';
 import PasteSmsModal from '@/components/daily/PasteSmsModal';
 import ReceiptScanModal from '@/components/daily/ReceiptScanModal';
 import MonthlyStatementModal from '@/components/analytics/MonthlyStatementModal';
+import AdminDashboardModal from '@/components/admin/AdminDashboardModal';
+import AuthModal from '@/components/auth/AuthModal';
+import { User as FirebaseUser } from 'firebase/auth';
 import { getStoredTheme, applyTheme } from '@/lib/theme/themeService';
 import { ParsedSmsTransaction } from '@/lib/parser/smsParser';
 import { checkAndNotifyUpcomingDuesAndTabs } from '@/lib/notifications/notificationService';
@@ -33,6 +36,8 @@ import {
   getOrInitFirebaseUser,
   getActiveFirebaseUid,
   subscribeToAuth,
+  isUserAdmin,
+  getCurrentFirebaseUser,
 } from '@/lib/firebase/authService';
 import {
   startFirebaseRealtimeSync,
@@ -132,6 +137,24 @@ export default function HomePage() {
   const [isPasteSmsOpen, setIsPasteSmsOpen] = useState(false);
   const [isReceiptScanOpen, setIsReceiptScanOpen] = useState(false);
   const [isStatementOpen, setIsStatementOpen] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(() => getCurrentFirebaseUser());
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  // Keep firebaseUser and active UID synchronized with auth state changes
+  useEffect(() => {
+    if (isFirebaseConfigured()) {
+      const unsub = subscribeToAuth((u) => {
+        setFirebaseUser(u);
+        if (u?.uid) {
+          setFirebaseUid(u.uid);
+        }
+      });
+      return () => unsub();
+    }
+  }, []);
+
+  const isAdmin = isUserAdmin(firebaseUser);
 
   // Initial load from storage and background Firebase sync
   useEffect(() => {
@@ -1133,6 +1156,11 @@ export default function HomePage() {
         onOpenExportModal={() => setIsExportModalOpen(true)}
         dueAlertCount={dueAlertCount}
         onForceSync={() => syncFullStateToCloud()}
+        isAdmin={isAdmin}
+        onOpenAdminModal={() => setIsAdminModalOpen(true)}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
+        userEmail={firebaseUser?.email}
+        isLoggedIn={Boolean(firebaseUser && !firebaseUser.isAnonymous)}
       />
 
       {/* Main Content Area */}
@@ -1330,6 +1358,8 @@ export default function HomePage() {
                 onCloudSyncSuccess={handleCloudSyncSuccess}
                 onClearAllData={handleClearAll}
                 onOpenStatement={() => setIsStatementOpen(true)}
+                onOpenAdminModal={() => setIsAdminModalOpen(true)}
+                onOpenAuthModal={() => setIsAuthModalOpen(true)}
               />
             </motion.div>
           )}
@@ -1467,6 +1497,23 @@ export default function HomePage() {
         onClose={() => setIsStatementOpen(false)}
         transactions={transactions}
         wallets={wallets}
+      />
+
+      {/* Super Admin Monitoring Console Modal */}
+      <AdminDashboardModal
+        isOpen={isAdminModalOpen}
+        onClose={() => setIsAdminModalOpen(false)}
+        currentAdminEmail={firebaseUser?.email || 'smohamedfarook2024@gmail.com'}
+      />
+
+      {/* Authentication & Sign-In Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        currentUser={firebaseUser}
+        onAuthSuccess={() => {
+          syncFullStateToCloud();
+        }}
       />
     </div>
   );
