@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
-import { User as FirebaseUser } from 'firebase/auth';
 import { isSupabaseConfigured } from '@/lib/supabase/client';
 import {
   getCurrentUser,
@@ -13,18 +12,6 @@ import {
   uploadLocalDataToCloud,
   fetchAllCloudData,
 } from '@/lib/supabase/dbService';
-import {
-  getCurrentFirebaseUser,
-  subscribeToAuth as subscribeToFirebaseAuth,
-  loginWithGoogle,
-  logoutUser as logoutFirebaseUser,
-  getActiveFirebaseUid,
-} from '@/lib/firebase/authService';
-import {
-  fetchAllFirebaseUserData,
-} from '@/lib/firebase/dbService';
-import { triggerImmediateFirebaseUpload } from '@/lib/firebase/realtimeSync';
-import { isFirebaseConfigured } from '@/lib/firebase/config';
 import {
   Transaction,
   WalletBalances,
@@ -51,14 +38,8 @@ import {
   ExternalLink,
   Smartphone,
   Bell,
-  BellRing,
-  Moon,
-  Sun,
   FileText,
   HardDrive,
-  Sparkles,
-  ArrowRight,
-  Check,
 } from 'lucide-react';
 import {
   isNotificationSupported,
@@ -69,8 +50,6 @@ import {
   sendTestNotification,
   NotificationPreferences,
 } from '@/lib/notifications/notificationService';
-import { getStoredTheme, applyTheme, ThemeMode } from '@/lib/theme/themeService';
-import { runSupabaseToFirebaseMigration, MigrationReport } from '@/lib/migration/supabaseToFirebase';
 
 interface ProfileSectionProps {
   transactions: Transaction[];
@@ -78,7 +57,7 @@ interface ProfileSectionProps {
   tabs: TabItem[];
   dues: MonthlyDue[];
   presets: QuickPreset[];
-  budget: BudgetConfig;
+  budget?: BudgetConfig;
   onCloudSyncSuccess: (data: {
     transactions?: Transaction[];
     wallets?: WalletBalances;
@@ -103,7 +82,6 @@ export default function ProfileSection({
   onOpenStatement,
 }: ProfileSectionProps) {
   const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(() => getCurrentFirebaseUser());
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -123,149 +101,87 @@ export default function ProfileSection({
   const [testingNotif, setTestingNotif] = useState(false);
   const [notifFeedback, setNotifFeedback] = useState<string | null>(null);
 
-  // Appearance Theme State
-  const [theme, setTheme] = useState<ThemeMode>('light');
-
-  // Firebase Migration State
-  const [migrationRunning, setMigrationRunning] = useState(false);
-  const [migrationProgress, setMigrationProgress] = useState<string | null>(null);
-  const [migrationResult, setMigrationResult] = useState<MigrationReport | null>(null);
-
-  const handleStartMigration = async () => {
-    setMigrationRunning(true);
-    setMigrationProgress('Initializing transfer...');
-    try {
-      const res = await runSupabaseToFirebaseMigration((msg) => {
-        setMigrationProgress(msg);
-      });
-      setMigrationResult(res);
-      if (res.success) {
-        setMessage({ type: 'success', text: res.message });
-      } else {
-        const errText = res.error || 'Migration failed';
-        setMessage({
-          type: 'error',
-          text: errText.includes('configuration-not-found')
-            ? 'Firebase Authentication is not activated in your Firebase Console yet. Go to Firebase Console > Authentication > Click "Get started" > Under "Sign-in method" tab, enable "Anonymous" and click Save.'
-            : errText,
-        });
-      }
-    } catch (err: any) {
-      const errText = err?.message || 'Migration error';
-      setMessage({
-        type: 'error',
-        text: errText.includes('configuration-not-found')
-          ? 'Firebase Authentication is not activated in your Firebase Console yet. Go to Firebase Console > Authentication > Click "Get started" > Under "Sign-in method" tab, enable "Anonymous" and click Save.'
-          : errText,
-      });
-    } finally {
-      setMigrationRunning(false);
-    }
-  };
-
+  // Check Supabase Auth
   useEffect(() => {
-    setNotifPermission(getNotificationPermission());
-    setNotifPrefs(getNotificationPreferences());
-    setTheme(getStoredTheme());
+    let mounted = true;
+    getCurrentUser().then((user) => {
+      if (mounted) setCurrentUser(user);
+    });
 
-    if (isFirebaseConfigured()) {
-      const unsub = subscribeToFirebaseAuth((u) => {
-        setFirebaseUser(u);
-      });
-      return () => unsub();
+    const unsubscribe = subscribeToAuthChanges((user) => {
+      if (mounted) setCurrentUser(user);
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  // Notifications init
+  useEffect(() => {
+    if (isNotificationSupported()) {
+      setNotifPermission(getNotificationPermission());
+      setNotifPrefs(getNotificationPreferences());
+    } else {
+      setNotifPermission('unsupported');
     }
   }, []);
 
-  const handleSetTheme = (newTheme: ThemeMode) => {
-    setTheme(newTheme);
-    applyTheme(newTheme);
-  };
-
   const handleRequestPermission = async () => {
-    const granted = await requestNotificationPermission();
-    setNotifPermission(getNotificationPermission());
-    if (granted) {
-      setNotifFeedback('Notifications enabled successfully!');
-    } else {
-      setNotifFeedback('Permission was not granted.');
+    const res = await requestNotificationPermission();
+    setNotifPermission(res);
+    if (res === 'granted') {
+      setNotifFeedback('Notifications enabled! You will receive timely alerts for upcoming dues & tabs.');
+      setTimeout(() => setNotifFeedback(null), 4000);
     }
-    setTimeout(() => setNotifFeedback(null), 4000);
   };
 
-  const handleTogglePref = (key: keyof NotificationPreferences, value: boolean) => {
-    const updated = setNotificationPreferences({ [key]: value });
+  const handleTogglePref = (key: keyof NotificationPreferences, val: boolean) => {
+    const updated = { ...notifPrefs, [key]: val };
     setNotifPrefs(updated);
+    setNotificationPreferences(updated);
   };
 
   const handleSendTest = async () => {
     setTestingNotif(true);
     setNotifFeedback(null);
-
-    // Guaranteed fallback: ensures button state resets within 2.5s no matter what
-    const safetyTimer = setTimeout(() => {
-      setTestingNotif(false);
-    }, 2500);
-
     try {
-      const success = await sendTestNotification();
-      clearTimeout(safetyTimer);
-      setNotifPermission(getNotificationPermission());
-      if (success) {
-        setNotifFeedback('Test alert dispatched! Check your phone notification tray.');
+      const ok = await sendTestNotification();
+      if (ok) {
+        setNotifFeedback('Test alert dispatched to this device!');
       } else {
-        const perm = getNotificationPermission();
-        if (perm === 'denied') {
-          setNotifFeedback('Notifications are blocked in your browser settings.');
-        } else if (perm === 'default') {
-          setNotifFeedback('Permission needed. Tap "Enable Phone Alerts" first.');
-        } else {
-          setNotifFeedback('Alert sent! If not visible, check phone "Do Not Disturb" or system alerts.');
-        }
+        setNotifFeedback('Could not display alert. Check system notification settings.');
       }
-    } catch (err: any) {
-      clearTimeout(safetyTimer);
-      setNotifFeedback(`Notice: ${err.message || 'Error triggering alert'}`);
+    } catch {
+      setNotifFeedback('Failed to trigger alert.');
     } finally {
-      clearTimeout(safetyTimer);
       setTestingNotif(false);
-      setTimeout(() => setNotifFeedback(null), 5000);
+      setTimeout(() => setNotifFeedback(null), 4000);
     }
   };
 
-  useEffect(() => {
-    if (isSupabaseConfigured) {
-      getCurrentUser().then(setCurrentUser);
-      const subscription = subscribeToAuthChanges((user) => {
-        setCurrentUser(user);
-      });
-      return () => {
-        subscription?.unsubscribe();
-      };
-    }
-  }, []);
-
-  const handleAuthSubmit = async (e: React.FormEvent) => {
+  const handleSupabaseAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
-
     setLoading(true);
     setMessage(null);
 
     try {
-      if (authMode === 'signin') {
-        const { error } = await signInWithEmail(email, password);
-        if (error) throw error;
-        setMessage({ type: 'success', text: 'Signed in successfully! Multi-device sync active.' });
-      } else {
-        const { error } = await signUpWithEmail(email, password);
+      if (authMode === 'signup') {
+        const { user, error } = await signUpWithEmail(email, password);
         if (error) throw error;
         setMessage({
           type: 'success',
-          text: 'Account created! Please check your email inbox to confirm your address.',
+          text: 'Account created! Please check your email inbox to verify.',
         });
+        if (user) setCurrentUser(user);
+      } else {
+        const { user, error } = await signInWithEmail(email, password);
+        if (error) throw error;
+        setMessage({ type: 'success', text: 'Logged in successfully!' });
+        if (user) setCurrentUser(user);
       }
-      setEmail('');
-      setPassword('');
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Authentication failed' });
     } finally {
@@ -275,17 +191,26 @@ export default function ProfileSection({
 
   const handleSignOut = async () => {
     setLoading(true);
-    await signOutUser();
-    setCurrentUser(null);
-    setLoading(false);
-    setMessage({ type: 'success', text: 'Signed out. Operating in local offline mode.' });
+    try {
+      await signOutUser();
+      setCurrentUser(null);
+      setMessage({ type: 'success', text: 'Signed out successfully' });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Sign out failed' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUploadToCloud = async () => {
+    if (!currentUser) {
+      setMessage({ type: 'error', text: 'Sign in to sync your data to the cloud.' });
+      return;
+    }
     setSyncing(true);
     setMessage(null);
     try {
-      const result = await uploadLocalDataToCloud({
+      const res = await uploadLocalDataToCloud({
         transactions,
         wallets,
         tabs,
@@ -293,457 +218,151 @@ export default function ProfileSection({
         presets,
         budget,
       });
-
-      if (result.success) {
+      if (res.success) {
         setLastSyncedTime(new Date().toLocaleTimeString());
-        setMessage({
-          type: 'success',
-          text: `Backup complete! ${dues.length} dues, ${transactions.length} transactions, and ${tabs.length} tabs backed up to Supabase.`,
-        });
+        setMessage({ type: 'success', text: 'Local ledger pushed to Cloud successfully!' });
       } else {
-        setMessage({
-          type: 'error',
-          text: result.error || 'Cloud backup failed. Check your Supabase tables in SQL Editor.',
-        });
+        throw new Error(res.error || 'Failed to upload data');
       }
     } catch (err: any) {
-      setMessage({
-        type: 'error',
-        text: err.message || 'Cloud backup encountered an error.',
-      });
+      setMessage({ type: 'error', text: err.message || 'Error uploading to cloud' });
     } finally {
       setSyncing(false);
     }
   };
 
   const handleDownloadFromCloud = async () => {
+    if (!currentUser) {
+      setMessage({ type: 'error', text: 'Sign in to fetch your cloud backup.' });
+      return;
+    }
     setSyncing(true);
     setMessage(null);
     try {
       const cloudData = await fetchAllCloudData();
-      if (cloudData) {
-        onCloudSyncSuccess(cloudData);
-        setLastSyncedTime(new Date().toLocaleTimeString());
-        const duesCount = cloudData.dues ? cloudData.dues.length : 0;
-        const txCount = cloudData.transactions ? cloudData.transactions.length : 0;
-        const tabCount = cloudData.tabs ? cloudData.tabs.length : 0;
-        setMessage({
-          type: 'success',
-          text: `Restore complete! Successfully retrieved ${duesCount} monthly dues, ${txCount} transactions, and ${tabCount} tabs from Supabase.`,
-        });
-      } else {
-        setMessage({
-          type: 'error',
-          text: 'No cloud data found. Ensure tables are created using schema.sql in Supabase.',
-        });
-      }
-    } catch (err: any) {
-      setMessage({
-        type: 'error',
-        text: `Download failed: ${err.message || 'Check database connection'}.`,
-      });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const handleUploadToFirebase = async () => {
-    setSyncing(true);
-    setMessage(null);
-    try {
-      const uid = firebaseUser?.uid || getActiveFirebaseUid();
-      await triggerImmediateFirebaseUpload(uid, {
-        transactions,
-        wallets,
-        tabs,
-        dues,
-        presets,
-        budget,
-      });
-      setLastSyncedTime(new Date().toLocaleTimeString());
-      setMessage({
-        type: 'success',
-        text: `Firebase Cloud Firestore backup complete! ${transactions.length} transactions, ${dues.length} dues, and ${tabs.length} tabs synced to Spark tier.`,
-      });
-    } catch (err: any) {
-      setMessage({
-        type: 'error',
-        text: err?.message || 'Firebase backup failed.',
-      });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const handleDownloadFromFirebase = async () => {
-    setSyncing(true);
-    setMessage(null);
-    try {
-      const uid = firebaseUser?.uid || getActiveFirebaseUid();
-      const cloudData = await fetchAllFirebaseUserData(uid);
-      if (cloudData && (cloudData.transactions.length > 0 || cloudData.wallets || cloudData.dues.length > 0)) {
+      if (cloudData.success) {
         onCloudSyncSuccess({
           transactions: cloudData.transactions,
-          wallets: cloudData.wallets || undefined,
-          dues: cloudData.dues,
+          wallets: cloudData.wallets,
           tabs: cloudData.tabs,
+          dues: cloudData.dues,
           presets: cloudData.presets,
-          budget: cloudData.budget || undefined,
+          budget: cloudData.budget,
         });
         setLastSyncedTime(new Date().toLocaleTimeString());
         setMessage({
           type: 'success',
-          text: `Firebase restore complete! Retrieved ${cloudData.transactions.length} transactions, ${cloudData.dues.length} dues, and ${cloudData.tabs.length} tabs from Cloud Firestore.`,
+          text: `Downloaded ${cloudData.transactions.length} transactions, ${cloudData.dues.length} dues & ${cloudData.tabs.length} tabs from cloud!`,
         });
       } else {
-        setMessage({
-          type: 'error',
-          text: 'No cloud data found in Firestore under your account yet. Use "Upload Ledger to Firebase" to push your data.',
-        });
+        throw new Error(cloudData.error || 'Failed to retrieve cloud data');
       }
     } catch (err: any) {
-      setMessage({
-        type: 'error',
-        text: `Firebase download failed: ${err?.message || 'Check database connection'}.`,
-      });
+      setMessage({ type: 'error', text: err.message || 'Error pulling from cloud' });
     } finally {
       setSyncing(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
-    setMessage(null);
-    try {
-      const user = await loginWithGoogle();
-      if (user) {
-        setFirebaseUser(user);
-        setMessage({ type: 'success', text: `Signed in with Google as ${user.displayName || user.email}.` });
-      }
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err?.message || 'Google sign-in failed' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleFirebaseSignOut = async () => {
-    setLoading(true);
-    try {
-      await logoutFirebaseUser();
-      setFirebaseUser(null);
-      setMessage({ type: 'success', text: 'Signed out of Firebase account.' });
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err?.message || 'Sign-out failed' });
-    } finally {
-      setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 w-full max-w-full overflow-hidden">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2">
-          <UserIcon className="w-5 h-5 text-black" />
-          <h2 className="text-base sm:text-lg font-bold text-zinc-950 tracking-tight">
-            Profile &amp; Cloud Database Sync
-          </h2>
+    <div className="space-y-4 max-w-2xl mx-auto w-full px-2 sm:px-0">
+      {/* User Header Card */}
+      <div className="bg-white rounded-2xl p-5 border border-zinc-200 shadow-sm flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-black flex items-center justify-center text-white shadow-xs shrink-0">
+            <UserIcon className="w-6 h-6 stroke-[2]" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-zinc-950">
+              {currentUser?.email?.split('@')[0] || 'Local User'}
+            </h2>
+            <p className="text-xs text-zinc-500 font-mono">
+              {currentUser?.email || 'Offline Local Storage Profile'}
+            </p>
+          </div>
         </div>
-        <p className="text-xs text-zinc-500">
-          Manage your account, permanent Firebase cloud database, and sync preferences
-        </p>
+
+        <span
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-semibold border ${
+            currentUser
+              ? 'bg-zinc-100 text-black border-zinc-300'
+              : 'bg-zinc-50 text-zinc-600 border-zinc-200'
+          }`}
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              currentUser ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'
+            }`}
+          />
+          <span>{currentUser ? 'Cloud Synced' : 'Device Storage'}</span>
+        </span>
       </div>
 
+      {/* Global Status Message */}
       {message && (
         <div
-          className={`p-3 rounded-xl border flex items-start gap-2 text-xs animate-in fade-in ${
+          className={`p-3.5 rounded-xl border text-xs flex items-center gap-2.5 transition-all ${
             message.type === 'success'
-              ? 'bg-zinc-100 text-zinc-900 border-zinc-300'
-              : 'bg-red-50 text-red-700 border-red-200'
+              ? 'bg-zinc-100 border-zinc-300 text-zinc-950'
+              : 'bg-red-50 border-red-200 text-red-700'
           }`}
         >
           {message.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-black mt-0.5" />
+            <CheckCircle2 className="w-4 h-4 text-black shrink-0" />
           ) : (
-            <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
           )}
           <span>{message.text}</span>
         </div>
       )}
 
-      {/* 1. PRIMARY LIVE DATABASE: Firebase Cloud Firestore */}
-      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 pb-3">
+      {/* Cloud Sync Database Card: Supabase */}
+      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="p-2 bg-black text-white rounded-xl">
-              <Sparkles className="w-4 h-4" />
+            <div className="p-2 bg-zinc-100 rounded-xl">
+              <Database className="w-4 h-4 text-black" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-xs sm:text-sm font-bold text-zinc-950">
-                  Firebase Cloud Firestore
+                <h3 className="text-xs sm:text-sm font-bold text-zinc-900">
+                  Supabase Cloud Database
                 </h3>
                 <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-black text-white">
-                  Active Primary
+                  PostgreSQL
                 </span>
               </div>
               <p className="text-[10px] sm:text-xs text-zinc-500">
-                100% permanently free ($0/mo Spark Tier) • Zero timeout • Multi-device real-time sync
+                Secure cloud backup and multi-device sync
               </p>
             </div>
           </div>
 
           <span
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold border ${
-              isFirebaseConfigured()
+              isSupabaseConfigured()
                 ? 'bg-zinc-100 text-black border-zinc-300'
                 : 'bg-zinc-50 text-zinc-600 border-zinc-200'
-            } w-fit`}
+            }`}
           >
             <span
               className={`w-2 h-2 rounded-full ${
-                isFirebaseConfigured() ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'
+                isSupabaseConfigured() ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'
               }`}
             />
-            <span>{isFirebaseConfigured() ? 'Connected & Active' : 'Local Mode'}</span>
+            <span>{isSupabaseConfigured() ? 'Connected' : 'Offline / Demo'}</span>
           </span>
         </div>
 
-        {/* Active Account / Session info */}
-        <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-3.5 h-3.5 text-black" />
-              <span className="font-bold text-zinc-900">
-                {firebaseUser?.email || (firebaseUser?.isAnonymous ? 'Spark Free Tier Session (Protected)' : 'Active Cloud Session')}
-              </span>
-            </div>
-            <p className="text-[10px] font-mono text-zinc-500 truncate max-w-sm">
-              UID: {firebaseUser?.uid || getActiveFirebaseUid()}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {!firebaseUser || firebaseUser.isAnonymous ? (
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-black hover:bg-zinc-800 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs"
-              >
-                <LogIn className="w-3 h-3" />
-                <span>Link Google Account</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleFirebaseSignOut}
-                disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-800 rounded-lg text-xs font-semibold transition-all cursor-pointer"
-              >
-                <LogOut className="w-3 h-3" />
-                <span>Sign Out</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Two-Way Push & Pull to Firebase */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-          <button
-            onClick={handleUploadToFirebase}
-            disabled={syncing || !isFirebaseConfigured()}
-            className="flex items-center justify-center gap-2 p-3 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
-          >
-            <UploadCloud className="w-4 h-4 text-black" />
-            <span>Upload Ledger to Firebase</span>
-          </button>
-
-          <button
-            onClick={handleDownloadFromFirebase}
-            disabled={syncing || !isFirebaseConfigured()}
-            className="flex items-center justify-center gap-2 p-3 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
-          >
-            <DownloadCloud className="w-4 h-4 text-black" />
-            <span>Restore Ledger from Firebase</span>
-          </button>
-        </div>
-
-        {/* Migration / Sync from Supabase */}
-        <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-200 space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <span className="text-xs font-bold text-zinc-950 block">
-                1-Click Supabase &rarr; Firebase Migration
-              </span>
-              <span className="text-[11px] text-zinc-500 block">
-                Transfers transactions, liquid wallets, tabs, dues &amp; presets directly into Cloud Firestore.
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleStartMigration}
-              disabled={migrationRunning}
-              className="flex items-center justify-center gap-2 px-4 py-2 bg-black hover:bg-zinc-800 disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-all shadow-xs shrink-0 cursor-pointer"
-            >
-              {migrationRunning ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Migrating Data...</span>
-                </>
-              ) : (
-                <>
-                  <UploadCloud className="w-3.5 h-3.5" />
-                  <span>Re-run Migration</span>
-                </>
-              )}
-            </button>
-          </div>
-
-          {migrationProgress && (
-            <div className="p-2.5 bg-white border border-zinc-200 rounded-lg text-xs font-mono text-zinc-700 flex items-center gap-2">
-              <RefreshCw className={`w-3.5 h-3.5 ${migrationRunning ? 'animate-spin text-black' : 'text-zinc-400'}`} />
-              <span>{migrationProgress}</span>
-            </div>
-          )}
-
-          {migrationResult && migrationResult.success && (
-            <div className="p-3 bg-zinc-100 rounded-lg border border-zinc-300 space-y-1.5 text-xs text-zinc-900">
-              <div className="flex items-center gap-1.5 font-bold">
-                <Check className="w-4 h-4 text-black" />
-                <span>Migration Completed Successfully!</span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-mono text-[11px]">
-                <div className="bg-white p-2 rounded border border-zinc-200">
-                  <span className="text-zinc-500 block">Transactions</span>
-                  <span className="font-bold">{migrationResult.counts.transactions}</span>
-                </div>
-                <div className="bg-white p-2 rounded border border-zinc-200">
-                  <span className="text-zinc-500 block">Monthly Dues</span>
-                  <span className="font-bold">{migrationResult.counts.dues}</span>
-                </div>
-                <div className="bg-white p-2 rounded border border-zinc-200">
-                  <span className="text-zinc-500 block">Social Tabs</span>
-                  <span className="font-bold">{migrationResult.counts.tabs}</span>
-                </div>
-                <div className="bg-white p-2 rounded border border-zinc-200">
-                  <span className="text-zinc-500 block">Liquid Wallets</span>
-                  <span className="font-bold">Synced</span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 2. ARCHIVED BACKUP DATABASE: Supabase PostgreSQL */}
-      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-3 opacity-90">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-zinc-100 rounded-xl">
-              <Database className="w-4 h-4 text-zinc-600" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-xs sm:text-sm font-bold text-zinc-900">
-                  Supabase PostgreSQL Database
-                </h3>
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-zinc-200 text-zinc-700">
-                  Archived / Dormant (Option A)
-                </span>
-              </div>
-              <p className="text-[10px] sm:text-xs text-zinc-500">
-                Retired as the active engine • Preserved for manual cold export/import
-              </p>
-            </div>
-          </div>
-
-          <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold bg-zinc-100 text-zinc-600 border border-zinc-200">
-            Dormant Backup
-          </span>
-        </div>
-
-        <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200 text-xs text-zinc-600 space-y-1.5">
-          <p>
-            Supabase has been retired from active day-to-day operations under <strong>Option A</strong>. FinTrack now operates natively on Google Cloud Firestore Spark tier (0 dormancy timeout, offline-first).
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-          <button
-            onClick={handleUploadToCloud}
-            disabled={syncing || !isSupabaseConfigured}
-            className="flex items-center justify-center gap-2 p-2.5 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-700 transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
-          >
-            <UploadCloud className="w-3.5 h-3.5 text-zinc-600" />
-            <span>Push Cold Backup to Supabase</span>
-          </button>
-
-          <button
-            onClick={handleDownloadFromCloud}
-            disabled={syncing || !isSupabaseConfigured}
-            className="flex items-center justify-center gap-2 p-2.5 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-700 transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
-          >
-            <DownloadCloud className="w-3.5 h-3.5 text-zinc-600" />
-            <span>Pull Cold Backup from Supabase</span>
-          </button>
-        </div>
-      </div>
-
-      {/* User Account / Login Card */}
-      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-zinc-100 rounded-xl text-black">
-              <ShieldCheck className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-xs sm:text-sm font-bold text-zinc-950">User Account</h3>
-              <p className="text-[10px] sm:text-xs text-zinc-500">
-                {currentUser
-                  ? 'Private cloud account authenticated'
-                  : 'Sign in to isolate and secure your personal ledger'}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {currentUser ? (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-zinc-50 rounded-xl border border-zinc-200">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-zinc-950">{currentUser.email}</span>
-                <span className="text-[9px] font-mono px-1.5 py-0.5 bg-black text-white rounded font-medium">
-                  Active
-                </span>
-              </div>
-              <p className="text-[10px] font-mono text-zinc-500 truncate max-w-xs">
-                UID: {currentUser.id}
-              </p>
-            </div>
-
-            <button
-              onClick={handleSignOut}
-              disabled={loading}
-              className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-800 text-xs font-semibold rounded-lg transition-colors active:scale-95"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {/* Tab switch */}
-            <div className="grid grid-cols-2 p-1 bg-zinc-100 rounded-xl text-xs font-semibold gap-1">
+        {/* Auth form or Session display */}
+        {!currentUser ? (
+          <form onSubmit={handleSupabaseAuth} className="space-y-3 pt-2">
+            <div className="grid grid-cols-2 gap-1 bg-zinc-100 p-1 rounded-xl">
               <button
                 type="button"
                 onClick={() => setAuthMode('signin')}
-                className={`py-1.5 rounded-lg transition-all ${
-                  authMode === 'signin'
-                    ? 'bg-black text-white shadow-xs'
-                    : 'text-zinc-600 hover:text-black'
+                className={`py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  authMode === 'signin' ? 'bg-white text-black shadow-2xs' : 'text-zinc-500'
                 }`}
               >
                 Sign In
@@ -751,75 +370,104 @@ export default function ProfileSection({
               <button
                 type="button"
                 onClick={() => setAuthMode('signup')}
-                className={`py-1.5 rounded-lg transition-all ${
-                  authMode === 'signup'
-                    ? 'bg-black text-white shadow-xs'
-                    : 'text-zinc-600 hover:text-black'
+                className={`py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  authMode === 'signup' ? 'bg-white text-black shadow-2xs' : 'text-zinc-500'
                 }`}
               >
                 Create Account
               </button>
             </div>
 
-            <form onSubmit={handleAuthSubmit} className="space-y-2.5">
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-zinc-700">Email Address</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
-                  className="w-full px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black focus:bg-white"
-                />
-              </div>
+            <div className="space-y-2">
+              <input
+                type="email"
+                required
+                placeholder="Email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 focus:outline-none focus:ring-1 focus:ring-black"
+              />
+              <input
+                type="password"
+                required
+                placeholder="Password (min 6 characters)"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 focus:outline-none focus:ring-1 focus:ring-black"
+              />
+            </div>
 
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-zinc-700">Password</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="At least 6 characters"
-                  className="w-full px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-black focus:bg-white"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2 bg-black text-white text-xs font-semibold rounded-xl hover:bg-zinc-800 transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95 disabled:opacity-50"
-              >
-                {authMode === 'signin' ? (
-                  <>
-                    <LogIn className="w-3.5 h-3.5" />
-                    <span>Sign In</span>
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>Create Free Account</span>
-                  </>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2 bg-black hover:bg-zinc-800 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-xs"
+            >
+              {loading ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : authMode === 'signin' ? (
+                <LogIn className="w-3.5 h-3.5" />
+              ) : (
+                <UserPlus className="w-3.5 h-3.5" />
+              )}
+              <span>{authMode === 'signin' ? 'Sign In to Cloud' : 'Create Cloud Account'}</span>
+            </button>
+          </form>
+        ) : (
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center justify-between p-3 bg-zinc-50 rounded-xl border border-zinc-200 text-xs">
+              <div className="space-y-0.5">
+                <span className="text-[10px] text-zinc-500 font-mono block">Logged In As</span>
+                <span className="font-semibold text-zinc-900">{currentUser.email}</span>
+                {lastSyncedTime && (
+                  <span className="text-[10px] text-zinc-500 block">
+                    Last sync: {lastSyncedTime}
+                  </span>
                 )}
+              </div>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                disabled={loading}
+                className="flex items-center gap-1 px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-800 rounded-lg text-xs font-semibold transition-colors"
+              >
+                <LogOut className="w-3 h-3" />
+                <span>Sign Out</span>
               </button>
-            </form>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleUploadToCloud}
+                disabled={syncing}
+                className="flex items-center justify-center gap-2 p-2.5 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 transition-all disabled:opacity-50"
+              >
+                <UploadCloud className="w-4 h-4 text-black" />
+                <span>Upload to Cloud</span>
+              </button>
+              <button
+                onClick={handleDownloadFromCloud}
+                disabled={syncing}
+                className="flex items-center justify-center gap-2 p-2.5 bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 transition-all disabled:opacity-50"
+              >
+                <DownloadCloud className="w-4 h-4 text-black" />
+                <span>Download from Cloud</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       {/* Phone Notifications & Alerts Card */}
-      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="p-2 bg-zinc-100 rounded-xl text-black">
-              <BellRing className="w-4 h-4" />
+              <Bell className="w-4 h-4" />
             </div>
             <div>
               <h3 className="text-xs sm:text-sm font-bold text-zinc-950">Phone Notifications &amp; Alerts</h3>
               <p className="text-[10px] sm:text-xs text-zinc-500">
-                Native device alerts for upcoming dues &amp; unsettled tabs (2–3 / day)
+                Native device alerts for upcoming dues &amp; unsettled tabs
               </p>
             </div>
           </div>
@@ -889,7 +537,6 @@ export default function ProfileSection({
           </div>
         )}
 
-        {/* Preferences & Test Controls (when supported and permitted) */}
         {notifPermission === 'granted' && (
           <div className="space-y-3 pt-1">
             <div className="space-y-2">
@@ -958,51 +605,6 @@ export default function ProfileSection({
             </div>
           </div>
         )}
-      </div>
-
-
-      {/* AMOLED Theme & Appearance Card */}
-      <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-3">
-        <div className="flex items-center gap-2">
-          <div className="p-2 bg-zinc-100 rounded-xl text-black">
-            <Moon className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-xs sm:text-sm font-bold text-zinc-950">Appearance &amp; Display</h3>
-            <p className="text-[10px] sm:text-xs text-zinc-500">
-              Pure AMOLED black mode for battery saving and night contrast
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 pt-1">
-          {[
-            { id: 'light', label: 'Light', icon: Sun, desc: 'Clean White' },
-            { id: 'amoled', label: 'AMOLED', icon: Moon, desc: 'Pitch Black #000' },
-            { id: 'system', label: 'Auto', icon: Smartphone, desc: 'System Match' },
-          ].map((item) => {
-            const Icon = item.icon;
-            const active = theme === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleSetTheme(item.id as ThemeMode)}
-                className={`p-3 rounded-xl border text-center transition-all ${
-                  active
-                    ? 'bg-black text-white border-black shadow-xs'
-                    : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100'
-                }`}
-              >
-                <Icon className="w-4 h-4 mx-auto mb-1" />
-                <span className="block text-xs font-bold">{item.label}</span>
-                <span className={`block text-[9px] ${active ? 'text-zinc-300' : 'text-zinc-500'}`}>
-                  {item.desc}
-                </span>
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {/* Monthly Financial Statement Card */}

@@ -4,7 +4,6 @@ import React, { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
 import {
   Transaction,
-  BudgetConfig,
   TimeframeSpendingPoint,
   WalletBalances,
   MonthlyDue,
@@ -42,23 +41,19 @@ import {
 
 interface AnalyticsViewProps {
   transactions: Transaction[];
-  budget: BudgetConfig;
   wallets?: WalletBalances;
   dues?: MonthlyDue[];
   tabs?: TabItem[];
   onOpenStatement?: () => void;
-  onNavigateToAssistant?: () => void;
   onNavigateToTabs?: () => void;
 }
 
 export default function AnalyticsView({
   transactions,
-  budget: _budget,
   wallets,
   dues = [],
   tabs = [],
   onOpenStatement,
-  onNavigateToAssistant,
   onNavigateToTabs,
 }: AnalyticsViewProps) {
   const [timeframe, setTimeframe] = useState<'daily' | 'weekly' | 'monthly'>('daily');
@@ -1025,24 +1020,14 @@ export default function AnalyticsView({
         </div>
       </div>
 
-      {/* MODULE 5: AI Executive Financial Brief */}
+      {/* MODULE 5: Executive Financial Insights */}
       {executiveBrief.length > 0 && (
         <div className="bg-white rounded-2xl p-4 sm:p-5 border border-zinc-200 shadow-sm space-y-3 w-full max-w-full overflow-hidden">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider text-black">
               <Sparkles className="w-3.5 h-3.5 text-black shrink-0" />
-              <span>AI Executive Financial Brief</span>
+              <span>Executive Financial Insights</span>
             </div>
-            {onNavigateToAssistant && (
-              <button
-                type="button"
-                onClick={onNavigateToAssistant}
-                className="text-xs font-semibold text-black hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <span>Ask Copilot</span>
-                <ArrowRight className="w-3 h-3" />
-              </button>
-            )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             {executiveBrief.map((brief, idx) => (

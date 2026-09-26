@@ -22,7 +22,16 @@ export function getLocalTransactions(): Transaction[] {
     const raw = localStorage.getItem(LOCAL_TX_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        // Automatically purge any transactions prior to Sep 4, 2026
+        const filtered = parsed.filter(
+          (tx: Transaction) => !tx.date || tx.date >= '2026-09-04'
+        );
+        if (filtered.length !== parsed.length) {
+          setLocalTransactions(filtered);
+        }
+        return filtered;
+      }
     }
   } catch (e) {
     console.error('Error reading localStorage transactions:', e);

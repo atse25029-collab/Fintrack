@@ -72,7 +72,9 @@ export async function getStoredTransactions(): Promise<Transaction[]> {
         .order('date', { ascending: false });
 
       if (!error && Array.isArray(data)) {
-        return data.map((row) => ({
+        return data
+          .filter((row) => !row.date || row.date >= '2026-09-04')
+          .map((row) => ({
           id: row.id,
           type: row.type,
           amount: Number(row.amount),
@@ -92,7 +94,7 @@ export async function getStoredTransactions(): Promise<Transaction[]> {
       console.warn('Supabase getStoredTransactions error:', err);
     }
   }
-  return memoryTransactions;
+  return memoryTransactions.filter((tx) => !tx.date || tx.date >= '2026-09-04');
 }
 
 export async function saveTransactions(transactions: Transaction[]): Promise<boolean> {

@@ -4,50 +4,34 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import NativeInstallButton from '@/components/pwa/NativeInstallButton';
 import {
-  Target,
   Database,
   Plus,
   LayoutDashboard,
-  Sparkles,
   Users,
   Calendar,
   BarChart3,
   Clock,
   User,
-  Moon,
-  Sun,
 } from 'lucide-react';
-import { getStoredTheme, cycleTheme, ThemeMode } from '@/lib/theme/themeService';
 
-import CloudSyncBadge from '@/components/layout/CloudSyncBadge';
-
-export type AppSection = 'daily' | 'assistant' | 'tabs' | 'dues' | 'analytics' | 'profile';
+export type AppSection = 'daily' | 'tabs' | 'dues' | 'analytics' | 'profile';
 
 interface HeaderProps {
   currentSection: AppSection;
   onSelectSection: (section: AppSection) => void;
   onOpenAddModal: () => void;
-  onOpenBudgetModal: () => void;
   onOpenExportModal: () => void;
   dueAlertCount?: number;
-  onForceSync?: () => void;
 }
 
 export default function Header({
   currentSection,
   onSelectSection,
   onOpenAddModal,
-  onOpenBudgetModal,
   onOpenExportModal,
   dueAlertCount = 0,
-  onForceSync,
 }: HeaderProps) {
   const [liveTime, setLiveTime] = useState<string>('');
-  const [theme, setTheme] = useState<ThemeMode>('light');
-
-  useEffect(() => {
-    setTheme(getStoredTheme());
-  }, []);
 
   useEffect(() => {
     const updateTime = () => {
@@ -69,7 +53,6 @@ export default function Header({
 
   const sections: { id: AppSection; label: string; icon: any; alert?: number }[] = [
     { id: 'daily', label: 'Home', icon: LayoutDashboard },
-    { id: 'assistant', label: 'AI Copilot', icon: Sparkles },
     { id: 'tabs', label: 'Tabs', icon: Users },
     { id: 'dues', label: 'Dues', icon: Calendar, alert: dueAlertCount },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
@@ -147,37 +130,7 @@ export default function Header({
 
         {/* Right Nav Actions: Scaled for mobile */}
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-          <CloudSyncBadge onForceSync={onForceSync} />
           <NativeInstallButton />
-
-          {/* AMOLED Theme Switcher */}
-          <motion.button
-            whileHover={{ scale: 1.08 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => setTheme(cycleTheme(theme))}
-            aria-label="Toggle AMOLED Dark Theme"
-            title={`Current: ${theme.toUpperCase()} (Click to toggle)`}
-            className="p-1.5 sm:p-2 text-zinc-700 hover:text-black rounded-lg hover:bg-zinc-200 transition-colors shrink-0 cursor-pointer"
-          >
-            {theme === 'amoled' ? (
-              <Moon className="w-4 h-4 text-amber-300 fill-amber-300" />
-            ) : theme === 'system' ? (
-              <Moon className="w-4 h-4 text-zinc-600" />
-            ) : (
-              <Sun className="w-4 h-4 text-zinc-800" />
-            )}
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.08 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={onOpenBudgetModal}
-            aria-label="Set Budget"
-            title="Set Budget Limits (₹)"
-            className="p-1.5 sm:p-2 text-zinc-700 hover:text-black rounded-lg hover:bg-zinc-200 transition-colors shrink-0 cursor-pointer"
-          >
-            <Target className="w-4 h-4" />
-          </motion.button>
 
           <motion.button
             whileHover={{ scale: 1.08 }}

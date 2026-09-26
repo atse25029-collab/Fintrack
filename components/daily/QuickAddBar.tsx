@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import { QuickPreset, PaymentMethod } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 import { getPresetIcon } from './QuickPresetModal';
-import { ArrowDownLeft, ArrowUpRight, SlidersHorizontal, MessageSquare, Camera } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, SlidersHorizontal, MessageSquare } from 'lucide-react';
 
 interface QuickAddBarProps {
   presets: QuickPreset[];
@@ -19,7 +19,6 @@ interface QuickAddBarProps {
   }) => void;
   onOpenCustomModal: (type: 'expense' | 'income') => void;
   onOpenPasteSms: () => void;
-  onOpenReceiptScan: () => void;
 }
 
 export default function QuickAddBar({
@@ -28,7 +27,6 @@ export default function QuickAddBar({
   onQuickAdd,
   onOpenCustomModal,
   onOpenPasteSms,
-  onOpenReceiptScan,
 }: QuickAddBarProps) {
   return (
     <div className="bg-white rounded-2xl p-4 sm:p-5 border border-zinc-200 shadow-sm space-y-3 w-full max-w-full overflow-hidden">
@@ -59,60 +57,63 @@ export default function QuickAddBar({
           return (
             <motion.button
               key={item.id}
-              whileHover={{ scale: 1.015, y: -1 }}
-              whileTap={{ scale: 0.94 }}
-              transition={{ type: 'spring', stiffness: 450, damping: 25 }}
+              whileHover={{ scale: 1.015 }}
+              whileTap={{ scale: 0.96 }}
               onClick={() =>
                 onQuickAdd({
                   description: item.label,
                   amount: item.amount,
                   category: item.category,
-                  type: isIncome ? 'income' : 'expense',
+                  type: item.type || 'expense',
                   paymentMethod: item.paymentMethod,
                 })
               }
-              className={`flex items-center justify-between p-2.5 sm:p-3 rounded-xl border text-left group min-w-0 cursor-pointer ${
+              className={`p-2.5 sm:p-3 rounded-xl border transition-all text-left flex items-center justify-between gap-2 group cursor-pointer shadow-2xs ${
                 isIncome
-                  ? 'bg-zinc-100/70 hover:bg-zinc-100 border-zinc-300'
-                  : 'bg-zinc-50 hover:bg-zinc-100 border-zinc-200'
+                  ? 'bg-zinc-50 hover:bg-zinc-100/80 border-zinc-200'
+                  : 'bg-zinc-50 hover:bg-zinc-100/80 border-zinc-200'
               }`}
             >
-              <div className="flex items-center gap-2 min-w-0 flex-1">
+              <div className="flex items-center gap-2 min-w-0">
                 <div
-                  className={`p-1.5 rounded-lg border shrink-0 transition-colors ${
-                    isIncome
-                      ? 'bg-black text-white border-black'
-                      : 'bg-white text-zinc-900 border-zinc-200 group-hover:border-black'
+                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    isIncome ? 'bg-black text-white' : 'bg-black text-white'
                   }`}
                 >
-                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2]" />
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1 min-w-0">
-                    <span className="text-xs font-semibold text-zinc-950 truncate">
-                      {item.label}
-                    </span>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-zinc-900 group-hover:text-black truncate leading-tight">
+                    {item.label}
                   </div>
-                  <div className="flex items-center gap-1 text-[9px] font-mono text-zinc-500 truncate">
-                    {isIncome ? (
-                      <span className="text-black font-semibold">+Inflow</span>
-                    ) : (
-                      <span>-Spend</span>
-                    )}
-                    <span>&bull;</span>
-                    <span className="truncate">{isCash ? 'Hand' : 'Account'}</span>
+                  <div className="flex items-center gap-1 text-[10px] text-zinc-600 leading-none mt-0.5">
+                    <span
+                      className={`inline-block w-1.5 h-1.5 rounded-full ${
+                        isCash ? 'bg-black' : 'bg-black'
+                      }`}
+                    />
+                    <span>{item.paymentMethod}</span>
                   </div>
                 </div>
               </div>
 
-              <span
-                className={`text-xs font-mono font-bold shrink-0 ml-1.5 ${
-                  isIncome ? 'text-black font-black' : 'text-zinc-950'
-                }`}
-              >
-                {isIncome ? '+' : '-'}
-                {formatCurrency(item.amount)}
-              </span>
+              <div className="text-right shrink-0">
+                <span
+                  className={`text-xs sm:text-sm font-bold font-mono block leading-tight ${
+                    isIncome ? 'text-black' : 'text-zinc-950 font-black'
+                  }`}
+                >
+                  {isIncome ? '+' : '-'}
+                  {formatCurrency(item.amount)}
+                </span>
+                <span
+                  className={`text-[9px] font-mono uppercase tracking-wider block ${
+                    isIncome ? 'text-zinc-700 font-bold' : 'text-zinc-600 font-semibold'
+                  }`}
+                >
+                  {item.type || 'expense'}
+                </span>
+              </div>
             </motion.button>
           );
         })}
@@ -141,31 +142,19 @@ export default function QuickAddBar({
         </motion.button>
       </div>
 
-      {/* Smart 1-Tap Entry: Paste SMS & AI Bill Scan */}
-      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-100">
+      {/* Smart 1-Tap Entry: Paste SMS */}
+      <div className="pt-1 border-t border-zinc-100">
         <motion.button
           type="button"
           whileHover={{ scale: 1.015 }}
           whileTap={{ scale: 0.95 }}
           onClick={onOpenPasteSms}
-          className="flex items-center justify-center gap-1.5 py-2 px-2 bg-zinc-50 hover:bg-zinc-100 text-zinc-800 text-[11px] font-semibold rounded-xl border border-zinc-200 transition-colors cursor-pointer"
+          className="w-full flex items-center justify-center gap-1.5 py-2 px-2 bg-zinc-50 hover:bg-zinc-100 text-zinc-800 text-[11px] font-semibold rounded-xl border border-zinc-200 transition-colors cursor-pointer"
         >
           <MessageSquare className="w-3.5 h-3.5 text-black" />
           <span>Paste Bank SMS</span>
-        </motion.button>
-
-        <motion.button
-          type="button"
-          whileHover={{ scale: 1.015 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={onOpenReceiptScan}
-          className="flex items-center justify-center gap-1.5 py-2 px-2 bg-zinc-50 hover:bg-zinc-100 text-zinc-800 text-[11px] font-semibold rounded-xl border border-zinc-200 transition-colors cursor-pointer"
-        >
-          <Camera className="w-3.5 h-3.5 text-black" />
-          <span>AI Scan Bill / UPI</span>
         </motion.button>
       </div>
     </div>
   );
 }
-
