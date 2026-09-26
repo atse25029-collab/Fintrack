@@ -108,13 +108,13 @@ export default function ProfileSection({
       if (mounted) setCurrentUser(user);
     });
 
-    const unsubscribe = subscribeToAuthChanges((user) => {
+    const sub = subscribeToAuthChanges((user) => {
       if (mounted) setCurrentUser(user);
     });
 
     return () => {
       mounted = false;
-      unsubscribe();
+      sub?.unsubscribe?.();
     };
   }, []);
 
