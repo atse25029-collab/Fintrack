@@ -537,7 +537,11 @@ export default function HomePage() {
   );
 
   const handleSettleTab = useCallback(
-    (tab: TabItem, recordTransaction: boolean = true) => {
+    (
+      tab: TabItem,
+      paymentMethod: 'Cash' | 'UPI / Bank' = 'UPI / Bank',
+      recordTransaction: boolean = true
+    ) => {
       const now = Date.now();
       const realTime = getExactRealTime();
 
@@ -563,7 +567,7 @@ export default function HomePage() {
             amount: tab.amount,
             category: 'Tab Settlement / Repayment',
             description: `Repayment received: ${tab.personName} settled tab (${tab.description})`,
-            paymentMethod: 'UPI / Bank',
+            paymentMethod: paymentMethod,
             notes: `Auto-recorded upon settling tab on ${realTime.date}`,
           });
         } else {
@@ -572,7 +576,7 @@ export default function HomePage() {
             amount: tab.amount,
             category: 'Miscellaneous',
             description: `Debt paid: Repaid ${tab.personName} for ${tab.description}`,
-            paymentMethod: 'UPI / Bank',
+            paymentMethod: paymentMethod,
             notes: `Auto-recorded upon debt repayment on ${realTime.date}`,
           });
         }
