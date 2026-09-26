@@ -129,9 +129,9 @@ export default function ProfileSection({
   }, []);
 
   const handleRequestPermission = async () => {
-    const res = await requestNotificationPermission();
-    setNotifPermission(res);
-    if (res === 'granted') {
+    const granted = await requestNotificationPermission();
+    setNotifPermission(getNotificationPermission());
+    if (granted) {
       setNotifFeedback('Notifications enabled! You will receive timely alerts for upcoming dues & tabs.');
       setTimeout(() => setNotifFeedback(null), 4000);
     }
