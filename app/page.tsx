@@ -6,6 +6,7 @@ import Header, { AppSection } from '@/components/layout/Header';
 import BottomNav from '@/components/layout/BottomNav';
 import WalletOverview from '@/components/wallets/WalletOverview';
 import WalletAdjustModal from '@/components/wallets/WalletAdjustModal';
+import WalletTransferModal from '@/components/wallets/WalletTransferModal';
 import QuickAddBar from '@/components/daily/QuickAddBar';
 import QuickPresetModal from '@/components/daily/QuickPresetModal';
 import DailyTimeline from '@/components/daily/DailyTimeline';
@@ -31,9 +32,19 @@ import {
   MonthlyDue,
   PaymentMethod,
   TransactionType,
+  TransferDirection,
   WalletBalances,
   QuickPreset,
 } from '@/lib/types';
+import {
+  syncWalletsToCloud,
+  syncTransactionToCloud,
+  deleteTransactionFromCloud,
+  syncDueToCloud,
+  deleteDueFromCloud,
+  syncTabToCloud,
+  deleteTabFromCloud,
+} from '@/lib/supabase/dbService';
 
 import {
   INITIAL_TRANSACTIONS,
@@ -82,6 +93,7 @@ export default function HomePage() {
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isPresetModalOpen, setIsPresetModalOpen] = useState(false);
 
   const [isTabModalOpen, setIsTabModalOpen] = useState(false);
@@ -134,10 +146,18 @@ export default function HomePage() {
     };
 
     window.addEventListener('fintrack_data_changed', handleStorageChange);
+    window.addEventListener('fintrack_wallets_changed', handleStorageChange);
+    window.addEventListener('fintrack_tabs_changed', handleStorageChange);
+    window.addEventListener('fintrack_dues_changed', handleStorageChange);
+    window.addEventListener('fintrack_presets_changed', handleStorageChange);
     window.addEventListener('storage', handleStorageChange);
 
     return () => {
       window.removeEventListener('fintrack_data_changed', handleStorageChange);
+      window.removeEventListener('fintrack_wallets_changed', handleStorageChange);
+      window.removeEventListener('fintrack_tabs_changed', handleStorageChange);
+      window.removeEventListener('fintrack_dues_changed', handleStorageChange);
+      window.removeEventListener('fintrack_presets_changed', handleStorageChange);
       window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
@@ -190,8 +210,25 @@ export default function HomePage() {
     amount: number,
     type: TransactionType,
     paymentMethod: PaymentMethod,
-    direction: 'apply' | 'revert'
+    direction: 'apply' | 'revert',
+    transferDirection?: TransferDirection
   ): WalletBalances => {
+    if (type === 'transfer') {
+      const isAccToCash = transferDirection === 'account_to_cash';
+      const factor = direction === 'apply' ? 1 : -1;
+      const cashDelta = isAccToCash ? amount * factor : -amount * factor;
+      const accDelta = isAccToCash ? -amount * factor : amount * factor;
+
+      const safeCash = Math.max(0, currentWallets.cashInHand || 0);
+      const safeAccount = Math.max(0, currentWallets.accountBalance || 0);
+
+      return {
+        cashInHand: Math.max(0, Math.round((safeCash + cashDelta) * 100) / 100),
+        accountBalance: Math.max(0, Math.round((safeAccount + accDelta) * 100) / 100),
+        lastUpdated: Date.now(),
+      };
+    }
+
     const isCash = paymentMethod === 'Cash';
     const sign = direction === 'apply' ? (type === 'income' ? 1 : -1) : (type === 'income' ? -1 : 1);
     const delta = amount * sign;
@@ -263,13 +300,21 @@ export default function HomePage() {
                 existing.amount,
                 existing.type,
                 existing.paymentMethod,
-                'revert'
+                'revert',
+                existing.transferDirection
               );
               const newAmount = typeof data.amount === 'number' ? data.amount : existing.amount;
               const newType = data.type || existing.type;
               const newMethod = data.paymentMethod || existing.paymentMethod;
-              const finalWallets = applyWalletImpact(reverted, newAmount, newType, newMethod, 'apply');
+              const newTransferDir = data.transferDirection || existing.transferDirection;
+              const finalWallets = applyWalletImpact(reverted, newAmount, newType, newMethod, 'apply', newTransferDir);
               setLocalWallets(finalWallets);
+              fetch('/api/wallets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(finalWallets),
+              }).catch(() => {});
+              syncWalletsToCloud(finalWallets).catch(() => {});
               updatedWallets = finalWallets;
               return finalWallets;
             });
@@ -301,6 +346,7 @@ export default function HomePage() {
             paymentMethod: data.paymentMethod || 'UPI / Bank',
             notes: data.notes || '',
             isMonthlyDue: data.isMonthlyDue || false,
+            transferDirection: data.transferDirection,
             createdAt: now,
             synced: false,
           };
@@ -308,8 +354,14 @@ export default function HomePage() {
           // Update wallet balances
           setWallets((w) => {
             const currentW = w || getLocalWallets();
-            const next = applyWalletImpact(currentW, newTx.amount, newTx.type, newTx.paymentMethod, 'apply');
+            const next = applyWalletImpact(currentW, newTx.amount, newTx.type, newTx.paymentMethod, 'apply', newTx.transferDirection);
             setLocalWallets(next);
+            fetch('/api/wallets', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(next),
+            }).catch(() => {});
+            syncWalletsToCloud(next).catch(() => {});
             updatedWallets = next;
             return next;
           });
@@ -321,12 +373,13 @@ export default function HomePage() {
         const filtered = updated.filter((tx) => !tx.date || tx.date >= '2026-09-04');
         setLocalTransactions(filtered);
 
-        // Async server backup
+        // Async server backup & Supabase cloud sync
         fetch('/api/transactions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data.id ? data : updated[0]),
         }).catch(() => {});
+        syncTransactionToCloud(data.id ? (updated.find((t) => t.id === data.id) || updated[0]) : updated[0]).catch(() => {});
 
         return filtered;
       });
@@ -349,9 +402,16 @@ export default function HomePage() {
               existing.amount,
               existing.type,
               existing.paymentMethod,
-              'revert'
+              'revert',
+              existing.transferDirection
             );
             setLocalWallets(reverted);
+            fetch('/api/wallets', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(reverted),
+            }).catch(() => {});
+            syncWalletsToCloud(reverted).catch(() => {});
             return reverted;
           });
         }
@@ -361,6 +421,83 @@ export default function HomePage() {
       });
 
       fetch(`/api/transactions?id=${id}`, { method: 'DELETE' }).catch(() => {});
+      deleteTransactionFromCloud(id).catch(() => {});
+    },
+    []
+  );
+
+  // --- Wallet Funds Transfer (Cash <-> Account) ---
+  const handleTransferFunds = useCallback(
+    (data: {
+      direction: TransferDirection;
+      amount: number;
+      description: string;
+      notes?: string;
+      date: string;
+      time: string;
+    }) => {
+      const now = Date.now();
+      const realTime = getExactRealTime();
+      const isAccToCash = data.direction === 'account_to_cash';
+
+      let nextWallets: WalletBalances = DEFAULT_WALLETS;
+
+      setWallets((w) => {
+        const currentW = w || getLocalWallets();
+        const safeCash = Math.max(0, currentW.cashInHand || 0);
+        const safeAccount = Math.max(0, currentW.accountBalance || 0);
+
+        nextWallets = {
+          cashInHand: isAccToCash
+            ? Math.round((safeCash + data.amount) * 100) / 100
+            : Math.max(0, Math.round((safeCash - data.amount) * 100) / 100),
+          accountBalance: isAccToCash
+            ? Math.max(0, Math.round((safeAccount - data.amount) * 100) / 100)
+            : Math.round((safeAccount + data.amount) * 100) / 100,
+          lastUpdated: now,
+        };
+
+        setLocalWallets(nextWallets);
+        fetch('/api/wallets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(nextWallets),
+        }).catch(() => {});
+        syncWalletsToCloud(nextWallets).catch(() => {});
+
+        return nextWallets;
+      });
+
+      const newTx: Transaction = {
+        id: `tx-xfer-${now}-${Math.random().toString(36).substring(2, 7)}`,
+        type: 'transfer',
+        amount: data.amount,
+        category: isAccToCash ? 'Cash Withdrawal (ATM)' : 'Cash Deposit (Bank / CDM)',
+        description: data.description || (isAccToCash ? 'ATM Cash Withdrawal' : 'Cash Deposit'),
+        date: data.date || realTime.date,
+        time: data.time || realTime.time,
+        timestamp: `${data.date || realTime.date}T${data.time || realTime.time}`,
+        paymentMethod: isAccToCash ? 'UPI / Bank' : 'Cash',
+        transferDirection: data.direction,
+        notes: data.notes || '',
+        createdAt: now,
+        synced: false,
+      };
+
+      setTransactions((prev) => {
+        const updated = [newTx, ...prev].filter((t) => !t.date || t.date >= '2026-09-04');
+        setLocalTransactions(updated);
+        return updated;
+      });
+
+      fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTx),
+      }).catch(() => {});
+      syncTransactionToCloud(newTx).catch(() => {});
+
+      setIsTransferModalOpen(false);
     },
     []
   );
@@ -396,6 +533,12 @@ export default function HomePage() {
         const currentW = w || getLocalWallets();
         const next = applyWalletImpact(currentW, newTx.amount, newTx.type, newTx.paymentMethod, 'apply');
         setLocalWallets(next);
+        fetch('/api/wallets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(next),
+        }).catch(() => {});
+        syncWalletsToCloud(next).catch(() => {});
         return next;
       });
 
@@ -410,6 +553,7 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newTx),
       }).catch(() => {});
+      syncTransactionToCloud(newTx).catch(() => {});
     },
     []
   );
@@ -613,6 +757,7 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(safeWallets),
       }).catch(() => {});
+      syncWalletsToCloud(safeWallets).catch(() => {});
       setIsWalletModalOpen(false);
     },
     []
@@ -822,6 +967,7 @@ export default function HomePage() {
               <WalletOverview
                 wallets={wallets}
                 onOpenAdjustModal={() => setIsWalletModalOpen(true)}
+                onOpenTransferModal={() => setIsTransferModalOpen(true)}
               />
 
               {/* Today's Activity Stream & Quick 1-Tap Actions */}
@@ -857,6 +1003,7 @@ export default function HomePage() {
                     setIsTxModalOpen(true);
                   }}
                   onOpenPasteSms={() => setIsPasteSmsOpen(true)}
+                  onOpenTransferModal={() => setIsTransferModalOpen(true)}
                 />
               </section>
 
@@ -1042,6 +1189,14 @@ export default function HomePage() {
         onClose={() => setIsWalletModalOpen(false)}
         currentWallets={wallets}
         onSave={handleSaveWallets}
+        onOpenTransfer={() => setIsTransferModalOpen(true)}
+      />
+
+      <WalletTransferModal
+        isOpen={isTransferModalOpen}
+        onClose={() => setIsTransferModalOpen(false)}
+        currentWallets={wallets}
+        onTransfer={handleTransferFunds}
       />
 
       <QuickPresetModal

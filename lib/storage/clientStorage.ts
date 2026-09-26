@@ -108,6 +108,7 @@ export function setLocalTabs(tabs: TabItem[]): void {
   try {
     localStorage.setItem(LOCAL_TABS_KEY, JSON.stringify(tabs));
     window.dispatchEvent(new CustomEvent('fintrack_tabs_changed'));
+    window.dispatchEvent(new CustomEvent('fintrack_data_changed'));
   } catch (e) {
     console.error('Error saving tabs:', e);
   }
@@ -134,6 +135,7 @@ export function setLocalDues(dues: MonthlyDue[]): void {
   try {
     localStorage.setItem(LOCAL_DUES_KEY, JSON.stringify(dues));
     window.dispatchEvent(new CustomEvent('fintrack_dues_changed'));
+    window.dispatchEvent(new CustomEvent('fintrack_data_changed'));
   } catch (e) {
     console.error('Error saving dues:', e);
   }
@@ -162,6 +164,7 @@ export function setLocalWallets(wallets: WalletBalances): void {
   try {
     localStorage.setItem(LOCAL_WALLETS_KEY, JSON.stringify(wallets));
     window.dispatchEvent(new CustomEvent('fintrack_wallets_changed'));
+    window.dispatchEvent(new CustomEvent('fintrack_data_changed'));
   } catch (e) {
     console.error('Error saving wallets:', e);
   }
@@ -188,6 +191,7 @@ export function setLocalQuickPresets(presets: QuickPreset[]): void {
   try {
     localStorage.setItem(LOCAL_PRESETS_KEY, JSON.stringify(presets));
     window.dispatchEvent(new CustomEvent('fintrack_presets_changed'));
+    window.dispatchEvent(new CustomEvent('fintrack_data_changed'));
   } catch (e) {
     console.error('Error saving quick presets:', e);
   }

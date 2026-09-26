@@ -4,16 +4,18 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { WalletBalances } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
-import { Banknote, Building2, SlidersHorizontal, ShieldCheck } from 'lucide-react';
+import { Banknote, Building2, SlidersHorizontal, ShieldCheck, ArrowRightLeft } from 'lucide-react';
 
 interface WalletOverviewProps {
   wallets: WalletBalances;
   onOpenAdjustModal: () => void;
+  onOpenTransferModal?: () => void;
 }
 
 export default function WalletOverview({
   wallets,
   onOpenAdjustModal,
+  onOpenTransferModal,
 }: WalletOverviewProps) {
   const totalLiquid = wallets.cashInHand + wallets.accountBalance;
 
@@ -28,15 +30,29 @@ export default function WalletOverview({
           </h2>
         </div>
 
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={onOpenAdjustModal}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] sm:text-xs font-medium text-zinc-700 hover:text-black bg-zinc-100 hover:bg-zinc-200 rounded-lg transition-colors shrink-0 cursor-pointer"
-        >
-          <SlidersHorizontal className="w-3 h-3 text-black" />
-          <span>Adjust Balances</span>
-        </motion.button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onOpenTransferModal && (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onOpenTransferModal}
+              className="flex items-center gap-1 px-2.5 py-1 text-[11px] sm:text-xs font-semibold text-white bg-black hover:bg-zinc-800 rounded-lg transition-colors shrink-0 cursor-pointer shadow-2xs"
+            >
+              <ArrowRightLeft className="w-3 h-3" />
+              <span>Transfer</span>
+            </motion.button>
+          )}
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={onOpenAdjustModal}
+            className="flex items-center gap-1 px-2.5 py-1 text-[11px] sm:text-xs font-medium text-zinc-700 hover:text-black bg-zinc-100 hover:bg-zinc-200 rounded-lg transition-colors shrink-0 cursor-pointer"
+          >
+            <SlidersHorizontal className="w-3 h-3 text-black" />
+            <span>Adjust</span>
+          </motion.button>
+        </div>
       </div>
 
       {/* 3-Column Wallet Cards */}

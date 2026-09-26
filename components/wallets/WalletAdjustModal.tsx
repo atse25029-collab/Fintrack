@@ -11,6 +11,7 @@ interface WalletAdjustModalProps {
   onClose: () => void;
   currentWallets: WalletBalances;
   onSave: (wallets: WalletBalances) => void;
+  onOpenTransfer?: () => void;
 }
 
 export default function WalletAdjustModal({
@@ -18,6 +19,7 @@ export default function WalletAdjustModal({
   onClose,
   currentWallets,
   onSave,
+  onOpenTransfer,
 }: WalletAdjustModalProps) {
   const [cashInHand, setCashInHand] = useState<string>('');
   const [accountBalance, setAccountBalance] = useState<string>('');
@@ -166,6 +168,23 @@ export default function WalletAdjustModal({
                   {formatCurrency(totalPreview)}
                 </span>
               </div>
+
+              {onOpenTransfer && (
+                <div className="p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl flex items-center justify-between text-xs">
+                  <span className="text-zinc-600">Need to move money between cash & account?</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenTransfer();
+                    }}
+                    className="font-semibold text-black hover:underline cursor-pointer flex items-center gap-1"
+                  >
+                    <span>Transfer Funds</span>
+                    <span>&rarr;</span>
+                  </button>
+                </div>
+              )}
 
               {/* Buttons */}
               <div className="flex gap-2.5 pt-2">

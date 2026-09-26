@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, TransactionType, PaymentMethod, DEFAULT_CATEGORIES } from '@/lib/types';
 import { getExactRealTime } from '@/lib/utils';
-import { X, ArrowDownLeft, ArrowUpRight, Check } from 'lucide-react';
+import { X, ArrowDownLeft, ArrowUpRight, ArrowRightLeft, Check } from 'lucide-react';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -77,19 +77,20 @@ export default function TransactionModal({
       ...(initialData?.id ? { id: initialData.id } : {}),
       type: resolvedType,
       amount: parsedAmount,
-      category: category || (resolvedType === 'expense' ? 'Miscellaneous' : 'Other Inflows'),
+      category: category || (resolvedType === 'expense' ? 'Miscellaneous' : resolvedType === 'income' ? 'Other Inflows' : 'Internal Wallet Transfer'),
       description: description.trim() || category,
       date: date || realTime.date,
       time: time || realTime.time,
       timestamp: `${date || realTime.date}T${time || realTime.time}`,
       paymentMethod,
+      transferDirection: initialData?.transferDirection || (resolvedType === 'transfer' ? (paymentMethod === 'Cash' ? 'account_to_cash' : 'cash_to_account') : undefined),
       notes: notes.trim(),
     });
 
     onClose();
   };
 
-  const categories = DEFAULT_CATEGORIES[type];
+  const categories = DEFAULT_CATEGORIES[type] || DEFAULT_CATEGORIES.expense;
 
   return (
     <AnimatePresence>
@@ -117,7 +118,15 @@ export default function TransactionModal({
             <div className="flex items-center justify-between pb-3 border-b border-zinc-100">
               <div>
                 <h3 className="text-base font-bold text-zinc-950">
-                  {initialData ? 'Edit Transaction' : type === 'expense' ? 'Log Expense' : 'Log Income'}
+                  {initialData
+                    ? type === 'transfer'
+                      ? 'Edit Transfer'
+                      : 'Edit Transaction'
+                    : type === 'expense'
+                    ? 'Log Expense'
+                    : type === 'income'
+                    ? 'Log Income'
+                    : 'Log Transfer'}
                 </h3>
                 <p className="text-xs text-zinc-500">Synced with live date &amp; time</p>
               </div>
@@ -136,7 +145,7 @@ export default function TransactionModal({
               <button
                 type="button"
                 onClick={() => handleTypeChange('expense')}
-                className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                className={`relative z-10 flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                   type === 'expense' ? 'text-white' : 'text-zinc-600 hover:text-black'
                 }`}
               >
@@ -153,7 +162,7 @@ export default function TransactionModal({
               <button
                 type="button"
                 onClick={() => handleTypeChange('income')}
-                className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                className={`relative z-10 flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                   type === 'income' ? 'text-white' : 'text-zinc-600 hover:text-black'
                 }`}
               >
@@ -166,6 +175,23 @@ export default function TransactionModal({
                 )}
                 <ArrowUpRight className="w-3.5 h-3.5 relative z-10" />
                 <span className="relative z-10">Income</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTypeChange('transfer')}
+                className={`relative z-10 flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  type === 'transfer' ? 'text-white' : 'text-zinc-600 hover:text-black'
+                }`}
+              >
+                {type === 'transfer' && (
+                  <motion.div
+                    layoutId="txModalTypePill"
+                    className="absolute inset-0 bg-black rounded-lg shadow-xs"
+                    transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                  />
+                )}
+                <ArrowRightLeft className="w-3.5 h-3.5 relative z-10" />
+                <span className="relative z-10">Transfer</span>
               </button>
             </div>
 

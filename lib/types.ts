@@ -1,4 +1,6 @@
-export type TransactionType = 'income' | 'expense';
+export type TransactionType = 'income' | 'expense' | 'transfer';
+
+export type TransferDirection = 'cash_to_account' | 'account_to_cash';
 
 export type PaymentMethod = 'UPI / Bank' | 'Card' | 'Cash' | 'Other';
 
@@ -14,6 +16,7 @@ export interface Transaction {
   paymentMethod: PaymentMethod;
   notes?: string;
   isMonthlyDue?: boolean; // When true, excluded from daily spending allowance calculation
+  transferDirection?: TransferDirection;
   createdAt: number;
   synced?: boolean;
 }
@@ -157,6 +160,11 @@ export const DEFAULT_CATEGORIES = {
     'Tab Settlement / Repayment',
     'Side Hustle / Gig',
     'Other Inflows',
+  ],
+  transfer: [
+    'Cash Withdrawal (ATM)',
+    'Cash Deposit (Bank / CDM)',
+    'Internal Wallet Transfer',
   ],
 };
 

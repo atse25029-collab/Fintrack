@@ -281,7 +281,7 @@ export function calculateFinancialStats(transactions: Transaction[]): FinancialS
       if (tx.date.startsWith(currentMonthStr)) {
         monthIncome += tx.amount;
       }
-    } else {
+    } else if (tx.type === 'expense') {
       totalExpense += tx.amount;
       if (tx.date.startsWith(currentMonthStr)) {
         monthExpense += tx.amount;

@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import { QuickPreset, PaymentMethod } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 import { getPresetIcon } from './QuickPresetModal';
-import { ArrowDownLeft, ArrowUpRight, SlidersHorizontal, MessageSquare } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, SlidersHorizontal, MessageSquare, ArrowRightLeft } from 'lucide-react';
 
 interface QuickAddBarProps {
   presets: QuickPreset[];
@@ -19,6 +19,7 @@ interface QuickAddBarProps {
   }) => void;
   onOpenCustomModal: (type: 'expense' | 'income') => void;
   onOpenPasteSms: () => void;
+  onOpenTransferModal?: () => void;
 }
 
 export default function QuickAddBar({
@@ -27,6 +28,7 @@ export default function QuickAddBar({
   onQuickAdd,
   onOpenCustomModal,
   onOpenPasteSms,
+  onOpenTransferModal,
 }: QuickAddBarProps) {
   return (
     <div className="bg-white rounded-2xl p-4 sm:p-5 border border-zinc-200 shadow-sm space-y-3 w-full max-w-full overflow-hidden">
@@ -142,8 +144,8 @@ export default function QuickAddBar({
         </motion.button>
       </div>
 
-      {/* Smart 1-Tap Entry: Paste SMS */}
-      <div className="pt-1 border-t border-zinc-100">
+      {/* Smart 1-Tap Entry: Paste SMS & Transfer */}
+      <div className={`pt-1 border-t border-zinc-100 ${onOpenTransferModal ? 'grid grid-cols-2 gap-2' : ''}`}>
         <motion.button
           type="button"
           whileHover={{ scale: 1.015 }}
@@ -154,6 +156,19 @@ export default function QuickAddBar({
           <MessageSquare className="w-3.5 h-3.5 text-black" />
           <span>Paste Bank SMS</span>
         </motion.button>
+
+        {onOpenTransferModal && (
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.015 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={onOpenTransferModal}
+            className="w-full flex items-center justify-center gap-1.5 py-2 px-2 bg-zinc-50 hover:bg-zinc-100 text-zinc-800 text-[11px] font-semibold rounded-xl border border-zinc-200 transition-colors cursor-pointer"
+          >
+            <ArrowRightLeft className="w-3.5 h-3.5 text-black" />
+            <span>Transfer Funds</span>
+          </motion.button>
+        )}
       </div>
     </div>
   );

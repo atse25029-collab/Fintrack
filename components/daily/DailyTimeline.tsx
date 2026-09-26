@@ -4,7 +4,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction } from '@/lib/types';
 import { formatCurrency, getLocalDateString } from '@/lib/utils';
-import { ArrowDownLeft, ArrowUpRight, Trash2, Edit2, Calendar } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, ArrowRightLeft, Trash2, Edit2, Calendar } from 'lucide-react';
 
 interface DailyTimelineProps {
   transactions: Transaction[];
@@ -54,6 +54,7 @@ export default function DailyTimeline({
           <AnimatePresence initial={false}>
             {todayTxs.map((tx) => {
               const isIncome = tx.type === 'income';
+              const isTransfer = tx.type === 'transfer';
               return (
                 <motion.div
                   key={tx.id}
@@ -67,12 +68,16 @@ export default function DailyTimeline({
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     <div
                       className={`p-1.5 sm:p-2 rounded-xl border shrink-0 ${
-                        isIncome
+                        isTransfer
+                          ? 'bg-zinc-100 border-zinc-300 text-zinc-900'
+                          : isIncome
                           ? 'bg-zinc-100 border-zinc-300 text-black'
                           : 'bg-black border-zinc-950 text-white'
                       }`}
                     >
-                      {isIncome ? (
+                      {isTransfer ? (
+                        <ArrowRightLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2]" />
+                      ) : isIncome ? (
                         <ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
                       ) : (
                         <ArrowDownLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
@@ -84,7 +89,11 @@ export default function DailyTimeline({
                           {tx.description || tx.category}
                         </span>
                         <span className="text-[9px] font-mono px-1 py-0.2 bg-zinc-100 text-zinc-600 rounded border border-zinc-200 shrink-0">
-                          {tx.paymentMethod.split(' ')[0]}
+                          {isTransfer
+                            ? tx.transferDirection === 'account_to_cash'
+                              ? 'ATM ➔ Cash'
+                              : 'Cash ➔ Bank'
+                            : tx.paymentMethod.split(' ')[0]}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-zinc-500 truncate mt-0.5">
@@ -104,10 +113,14 @@ export default function DailyTimeline({
                     <div className="text-right">
                       <div
                         className={`text-xs sm:text-sm font-mono font-bold ${
-                          isIncome ? 'text-black font-extrabold' : 'text-zinc-950'
+                          isTransfer
+                            ? 'text-zinc-800'
+                            : isIncome
+                            ? 'text-black font-extrabold'
+                            : 'text-zinc-950'
                         }`}
                       >
-                        {isIncome ? '+' : '-'}
+                        {isTransfer ? '⇄ ' : isIncome ? '+' : '-'}
                         {formatCurrency(tx.amount)}
                       </div>
                     </div>
