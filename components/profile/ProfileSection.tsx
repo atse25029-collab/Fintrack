@@ -169,18 +169,18 @@ export default function ProfileSection({
 
     try {
       if (authMode === 'signup') {
-        const { user, error } = await signUpWithEmail(email, password);
+        const { data, error } = await signUpWithEmail(email, password);
         if (error) throw error;
         setMessage({
           type: 'success',
           text: 'Account created! Please check your email inbox to verify.',
         });
-        if (user) setCurrentUser(user);
+        if (data?.user) setCurrentUser(data.user);
       } else {
-        const { user, error } = await signInWithEmail(email, password);
+        const { data, error } = await signInWithEmail(email, password);
         if (error) throw error;
         setMessage({ type: 'success', text: 'Logged in successfully!' });
-        if (user) setCurrentUser(user);
+        if (data?.user) setCurrentUser(data.user);
       }
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Authentication failed' });
@@ -240,7 +240,7 @@ export default function ProfileSection({
     setMessage(null);
     try {
       const cloudData = await fetchAllCloudData();
-      if (cloudData.success) {
+      if (cloudData) {
         onCloudSyncSuccess({
           transactions: cloudData.transactions,
           wallets: cloudData.wallets,
@@ -252,10 +252,10 @@ export default function ProfileSection({
         setLastSyncedTime(new Date().toLocaleTimeString());
         setMessage({
           type: 'success',
-          text: `Downloaded ${cloudData.transactions.length} transactions, ${cloudData.dues.length} dues & ${cloudData.tabs.length} tabs from cloud!`,
+          text: `Downloaded ${cloudData.transactions?.length || 0} transactions, ${cloudData.dues?.length || 0} dues & ${cloudData.tabs?.length || 0} tabs from cloud!`,
         });
       } else {
-        throw new Error(cloudData.error || 'Failed to retrieve cloud data');
+        throw new Error('Failed to retrieve cloud data (Supabase client not initialized)');
       }
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Error pulling from cloud' });
@@ -340,17 +340,17 @@ export default function ProfileSection({
 
           <span
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-semibold border ${
-              isSupabaseConfigured()
+              isSupabaseConfigured
                 ? 'bg-zinc-100 text-black border-zinc-300'
                 : 'bg-zinc-50 text-zinc-600 border-zinc-200'
             }`}
           >
             <span
               className={`w-2 h-2 rounded-full ${
-                isSupabaseConfigured() ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'
+                isSupabaseConfigured ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'
               }`}
             />
-            <span>{isSupabaseConfigured() ? 'Connected' : 'Offline / Demo'}</span>
+            <span>{isSupabaseConfigured ? 'Connected' : 'Offline / Demo'}</span>
           </span>
         </div>
 

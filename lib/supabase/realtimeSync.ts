@@ -20,7 +20,7 @@ export interface FullAppData {
   tabs: TabItem[];
   dues: MonthlyDue[];
   presets: QuickPreset[];
-  budget: BudgetConfig;
+  budget?: BudgetConfig;
 }
 
 let lastKnownChecksum = '';

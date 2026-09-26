@@ -421,7 +421,7 @@ export async function uploadLocalDataToCloud(data: {
   tabs: TabItem[];
   dues: MonthlyDue[];
   presets: QuickPreset[];
-  budget: BudgetConfig;
+  budget?: BudgetConfig;
 }): Promise<{ success: boolean; error?: string }> {
   const client = getSupabaseClient();
   if (!client) return { success: false, error: 'Supabase client is not configured' };
@@ -520,17 +520,19 @@ export async function uploadLocalDataToCloud(data: {
     }
 
     // 6. Budget config upsert
-    const { error: budgetErr } = await client.from('budget_config').upsert(
-      {
-        user_id: userId,
-        monthly_limit: data.budget.monthlyLimit,
-        daily_allowance: data.budget.dailyAllowance,
-        currency: data.budget.currency,
-        currency_symbol: data.budget.currencySymbol,
-      },
-      { onConflict: 'user_id' }
-    );
-    if (budgetErr) throw new Error(`Budget error: ${budgetErr.message}`);
+    if (data.budget) {
+      const { error: budgetErr } = await client.from('budget_config').upsert(
+        {
+          user_id: userId,
+          monthly_limit: data.budget.monthlyLimit,
+          daily_allowance: data.budget.dailyAllowance,
+          currency: data.budget.currency,
+          currency_symbol: data.budget.currencySymbol,
+        },
+        { onConflict: 'user_id' }
+      );
+      if (budgetErr) throw new Error(`Budget error: ${budgetErr.message}`);
+    }
 
     return { success: true };
   } catch (err: any) {
