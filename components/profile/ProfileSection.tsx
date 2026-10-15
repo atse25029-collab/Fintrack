@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
-import { isSupabaseConfigured } from '@/lib/supabase/client';
+import { isSupabaseConfigured, getSupabaseSqlEditorUrl } from '@/lib/supabase/client';
 import {
   getCurrentUser,
   signInWithEmail,
@@ -40,6 +40,7 @@ import {
   Bell,
   FileText,
   HardDrive,
+  Copy,
 } from 'lucide-react';
 import {
   isNotificationSupported,
@@ -89,6 +90,8 @@ export default function ProfileSection({
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [lastSyncedTime, setLastSyncedTime] = useState<string | null>(null);
+  const [schemaFixNeeded, setSchemaFixNeeded] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState(false);
 
   // Phone Notifications State
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>('default');
@@ -221,10 +224,17 @@ export default function ProfileSection({
       if (res.success) {
         setLastSyncedTime(new Date().toLocaleTimeString());
         setMessage({ type: 'success', text: 'Local ledger pushed to Cloud successfully!' });
+        setSchemaFixNeeded(false);
       } else {
+        if (res.needsSchemaMigration || res.error?.includes('transactions_type_check')) {
+          setSchemaFixNeeded(true);
+        }
         throw new Error(res.error || 'Failed to upload data');
       }
     } catch (err: any) {
+      if (err.message?.includes('transactions_type_check')) {
+        setSchemaFixNeeded(true);
+      }
       setMessage({ type: 'error', text: err.message || 'Error uploading to cloud' });
     } finally {
       setSyncing(false);
@@ -313,6 +323,65 @@ export default function ProfileSection({
             <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
           )}
           <span>{message.text}</span>
+        </div>
+      )}
+
+      {/* Supabase Schema Fix Banner for Transfers */}
+      {(schemaFixNeeded || message?.text?.includes('transactions_type_check')) && (
+        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 shadow-sm space-y-3">
+          <div className="flex items-start gap-2.5">
+            <div className="p-2 bg-amber-100 rounded-xl text-amber-900 shrink-0 mt-0.5">
+              <Database className="w-4 h-4" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-xs font-bold text-amber-950">
+                1-Time Database Update Required for Transfers
+              </h4>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Your Supabase PostgreSQL table has a constraint restricting transactions to <code className="bg-amber-100 px-1 py-0.5 rounded text-[10px] font-mono font-semibold">(&apos;income&apos;, &apos;expense&apos;)</code>.
+                To sync your <strong>Cash ⇄ Account Transfers</strong>, run this 2-line SQL command in your Supabase SQL Editor:
+              </p>
+            </div>
+          </div>
+
+          <div className="relative bg-zinc-900 text-zinc-100 p-3 rounded-xl font-mono text-[11px] leading-relaxed overflow-x-auto select-all">
+            <p>ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_type_check;</p>
+            <p>ALTER TABLE public.transactions ADD CONSTRAINT transactions_type_check CHECK (type IN (&apos;income&apos;, &apos;expense&apos;, &apos;transfer&apos;));</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                const sql = `ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_type_check;\nALTER TABLE public.transactions ADD CONSTRAINT transactions_type_check CHECK (type IN ('income', 'expense', 'transfer'));\nALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS transfer_direction TEXT CHECK (transfer_direction IN ('cash_to_account', 'account_to_cash'));\nNOTIFY pgrst, 'reload schema';`;
+                navigator.clipboard.writeText(sql);
+                setCopyFeedback(true);
+                setTimeout(() => setCopyFeedback(false), 3000);
+              }}
+              className="flex-1 py-2 px-3 bg-black text-white text-xs font-semibold rounded-xl hover:bg-zinc-800 transition-all flex items-center justify-center gap-1.5"
+            >
+              {copyFeedback ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Copied to Clipboard!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy SQL Fix</span>
+                </>
+              )}
+            </button>
+            <a
+              href={getSupabaseSqlEditorUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="py-2 px-3 bg-white text-black border border-zinc-300 text-xs font-semibold rounded-xl hover:bg-zinc-50 transition-all flex items-center gap-1.5"
+            >
+              <span>Open SQL Editor</span>
+              <ExternalLink className="w-3 h-3 text-zinc-500" />
+            </a>
+          </div>
         </div>
       )}
 

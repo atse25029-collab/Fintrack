@@ -40,7 +40,7 @@ DROP TABLE IF EXISTS public.transactions CASCADE;
 CREATE TABLE public.transactions (
     id TEXT PRIMARY KEY,
     user_id TEXT DEFAULT 'default',
-    type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+    type TEXT NOT NULL CHECK (type IN ('income', 'expense', 'transfer')),
     amount NUMERIC NOT NULL CHECK (amount >= 0),
     category TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -49,6 +49,7 @@ CREATE TABLE public.transactions (
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     payment_method TEXT NOT NULL,
     is_monthly_due BOOLEAN DEFAULT false,
+    transfer_direction TEXT CHECK (transfer_direction IN ('cash_to_account', 'account_to_cash')),
     notes TEXT,
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
     synced BOOLEAN DEFAULT true

@@ -422,13 +422,15 @@ export async function uploadLocalDataToCloud(data: {
   dues: MonthlyDue[];
   presets: QuickPreset[];
   budget?: BudgetConfig;
-}): Promise<{ success: boolean; error?: string }> {
+}): Promise<{ success: boolean; error?: string; needsSchemaMigration?: boolean }> {
   const client = getSupabaseClient();
   if (!client) return { success: false, error: 'Supabase client is not configured' };
 
   try {
     const user = await getCurrentUser();
     const userId = user?.id || 'default';
+
+    let schemaMigrationRequired = false;
 
     // 1. Transactions upsert
     if (data.transactions.length > 0) {
@@ -449,7 +451,18 @@ export async function uploadLocalDataToCloud(data: {
         synced: true,
       }));
       const { error } = await client.from('transactions').upsert(rows, { onConflict: 'id' });
-      if (error) throw new Error(`Transactions error: ${error.message}`);
+      if (error) {
+        if (error.message.includes('transactions_type_check')) {
+          schemaMigrationRequired = true;
+          // Gracefully sync non-transfer transactions so standard expenses and income are not blocked
+          const nonTransfers = rows.filter((r) => r.type !== 'transfer');
+          if (nonTransfers.length > 0) {
+            await client.from('transactions').upsert(nonTransfers, { onConflict: 'id' });
+          }
+        } else {
+          throw new Error(`Transactions error: ${error.message}`);
+        }
+      }
     }
 
     // 2. Wallets upsert
@@ -532,6 +545,14 @@ export async function uploadLocalDataToCloud(data: {
         { onConflict: 'user_id' }
       );
       if (budgetErr) throw new Error(`Budget error: ${budgetErr.message}`);
+    }
+
+    if (schemaMigrationRequired) {
+      return {
+        success: false,
+        needsSchemaMigration: true,
+        error: 'Transactions error: new row for relation "transactions" violates check constraint "transactions_type_check"',
+      };
     }
 
     return { success: true };

@@ -32,3 +32,13 @@ export function getSupabaseClient(): SupabaseClient | null {
   }
   return cachedClient;
 }
+
+export function getSupabaseSqlEditorUrl(): string {
+  if (supabaseUrl) {
+    const match = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/);
+    if (match && match[1]) {
+      return `https://supabase.com/dashboard/project/${match[1]}/sql/new`;
+    }
+  }
+  return 'https://supabase.com/dashboard/project/_/sql/new';
+}
