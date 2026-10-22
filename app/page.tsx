@@ -25,6 +25,7 @@ import PasteSmsModal from '@/components/daily/PasteSmsModal';
 import MonthlyStatementModal from '@/components/analytics/MonthlyStatementModal';
 import { ParsedSmsTransaction } from '@/lib/parser/smsParser';
 import { checkAndNotifyUpcomingDuesAndTabs } from '@/lib/notifications/notificationService';
+import { initNativeApp } from '@/lib/native/capacitorBridge';
 
 import {
   Transaction,
@@ -104,6 +105,31 @@ export default function HomePage() {
 
   const [isPasteSmsOpen, setIsPasteSmsOpen] = useState(false);
   const [isStatementOpen, setIsStatementOpen] = useState(false);
+
+  // Native Android hardware back-button listener
+  const backHandlerRef = React.useRef<() => boolean>(() => false);
+  backHandlerRef.current = () => {
+    if (isTxModalOpen) { setIsTxModalOpen(false); return true; }
+    if (isTransferModalOpen) { setIsTransferModalOpen(false); return true; }
+    if (isWalletModalOpen) { setIsWalletModalOpen(false); return true; }
+    if (isPresetModalOpen) { setIsPresetModalOpen(false); return true; }
+    if (isTabModalOpen) { setIsTabModalOpen(false); return true; }
+    if (isDueModalOpen) { setIsDueModalOpen(false); return true; }
+    if (isExportModalOpen) { setIsExportModalOpen(false); return true; }
+    if (isPasteSmsOpen) { setIsPasteSmsOpen(false); return true; }
+    if (isStatementOpen) { setIsStatementOpen(false); return true; }
+    if (currentSection !== 'daily') {
+      setCurrentSection('daily');
+      return true;
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    initNativeApp({
+      onHardwareBack: () => backHandlerRef.current(),
+    });
+  }, []);
 
   // Initial load from storage (purges any transactions before Sep 4, 2026)
   useEffect(() => {
