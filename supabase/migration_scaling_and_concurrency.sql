@@ -107,9 +107,14 @@ CREATE INDEX IF NOT EXISTS idx_feedbacks_user ON public.feedbacks(user_id);
 
 -- 3. High-Performance Composite Indexes for Concurrent Users
 CREATE INDEX IF NOT EXISTS idx_tx_user_date ON public.transactions(user_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_tx_user_created ON public.transactions(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tabs_user_created ON public.tabs(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tabs_user_status ON public.tabs(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_dues_user_day ON public.monthly_dues(user_id, due_day_of_month ASC);
 CREATE INDEX IF NOT EXISTS idx_dues_user_status ON public.monthly_dues(user_id, status);
-CREATE INDEX IF NOT EXISTS idx_presets_user ON public.quick_presets(user_id);
+CREATE INDEX IF NOT EXISTS idx_presets_user_created ON public.quick_presets(user_id, created_at ASC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_user_id ON public.wallets(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_user_id ON public.budget_config(user_id);
 
 -- 4. Atomic Stored Procedure for High-Concurrency Wallet Updates
 -- Prevents lost updates / race conditions during rapid concurrent transactions via row-level locking (FOR UPDATE)
@@ -239,42 +244,58 @@ DROP POLICY IF EXISTS "User isolate feedbacks" ON public.feedbacks;
 DROP POLICY IF EXISTS "Admin view feedbacks" ON public.feedbacks;
 DROP POLICY IF EXISTS "Allow all for feedbacks" ON public.feedbacks;
 
--- User-scoped policies
+-- User-scoped policies with (select auth.uid())::text subquery optimization
+-- Wrapping auth.uid() in a subquery causes PostgreSQL to evaluate it ONCE per query (InitPlan)
+-- rather than once per row, preventing severe CPU and RAM exhaustion under high concurrent load.
 CREATE POLICY "User isolate transactions" ON public.transactions
     FOR ALL TO authenticated
-    USING (auth.uid()::text = user_id OR user_id = 'default')
-    WITH CHECK (auth.uid()::text = user_id OR user_id = 'default');
+    USING ((select auth.uid())::text = user_id OR user_id = 'default')
+    WITH CHECK ((select auth.uid())::text = user_id OR user_id = 'default');
 
 CREATE POLICY "User isolate wallets" ON public.wallets
     FOR ALL TO authenticated
-    USING (auth.uid()::text = user_id OR user_id = 'default')
-    WITH CHECK (auth.uid()::text = user_id OR user_id = 'default');
+    USING ((select auth.uid())::text = user_id OR user_id = 'default')
+    WITH CHECK ((select auth.uid())::text = user_id OR user_id = 'default');
 
 CREATE POLICY "User isolate tabs" ON public.tabs
     FOR ALL TO authenticated
-    USING (auth.uid()::text = user_id OR user_id = 'default')
-    WITH CHECK (auth.uid()::text = user_id OR user_id = 'default');
+    USING ((select auth.uid())::text = user_id OR user_id = 'default')
+    WITH CHECK ((select auth.uid())::text = user_id OR user_id = 'default');
 
 CREATE POLICY "User isolate monthly dues" ON public.monthly_dues
     FOR ALL TO authenticated
-    USING (auth.uid()::text = user_id OR user_id = 'default')
-    WITH CHECK (auth.uid()::text = user_id OR user_id = 'default');
+    USING ((select auth.uid())::text = user_id OR user_id = 'default')
+    WITH CHECK ((select auth.uid())::text = user_id OR user_id = 'default');
 
 CREATE POLICY "User isolate presets" ON public.quick_presets
     FOR ALL TO authenticated
-    USING (auth.uid()::text = user_id OR user_id = 'default')
-    WITH CHECK (auth.uid()::text = user_id OR user_id = 'default');
+    USING ((select auth.uid())::text = user_id OR user_id = 'default')
+    WITH CHECK ((select auth.uid())::text = user_id OR user_id = 'default');
 
 CREATE POLICY "User isolate budget" ON public.budget_config
     FOR ALL TO authenticated
-    USING (auth.uid()::text = user_id OR user_id = 'default')
-    WITH CHECK (auth.uid()::text = user_id OR user_id = 'default');
+    USING ((select auth.uid())::text = user_id OR user_id = 'default')
+    WITH CHECK ((select auth.uid())::text = user_id OR user_id = 'default');
 
 -- Feedback policies: Users insert & read their own, Admin reads all
 CREATE POLICY "User isolate feedbacks" ON public.feedbacks
     FOR ALL TO authenticated
     USING (
-        auth.uid()::text = user_id 
-        OR (auth.jwt() ->> 'email') = 'smohamedfarook2024@gmail.com'
+        (select auth.uid())::text = user_id 
+        OR ((select auth.jwt()) ->> 'email') = 'smohamedfarook2024@gmail.com'
     )
-    WITH CHECK (auth.uid()::text = user_id);
+    WITH CHECK ((select auth.uid())::text = user_id);
+
+-- 8. Safe Resource Controls & Memory Protection
+-- Restricts runaway queries and hanging transactions from exhausting micro-instance RAM (431MB limit)
+ALTER ROLE authenticator SET statement_timeout = '8s';
+ALTER ROLE authenticator SET idle_in_transaction_session_timeout = '10s';
+
+-- 9. Update Query Planner Statistics for Instant Index Lookup
+ANALYZE public.transactions;
+ANALYZE public.wallets;
+ANALYZE public.tabs;
+ANALYZE public.monthly_dues;
+ANALYZE public.quick_presets;
+ANALYZE public.budget_config;
+ANALYZE public.feedbacks;

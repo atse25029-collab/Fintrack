@@ -339,24 +339,105 @@ export async function fetchAllCloudData(): Promise<{
     const user = await getCurrentUser();
     const userId = user?.id || 'default';
 
-    const userFilter = userId !== 'default'
-      ? `user_id.eq.${userId},user_id.eq.default,user_id.is.null`
-      : 'user_id.eq.default,user_id.is.null';
+    const isDefault = userId === 'default';
 
-    const [txRes, walletRes, tabsRes, duesRes, presetsRes, budgetRes] = await Promise.all([
-      client.from('transactions').select('*').or(userFilter).order('date', { ascending: false }),
-      client.from('wallets').select('*').or(userFilter),
-      client.from('tabs').select('*').or(userFilter).order('created_at', { ascending: false }),
-      client.from('monthly_dues').select('*').or(userFilter).order('due_day_of_month', { ascending: true }),
-      client.from('quick_presets').select('*').or(userFilter).order('created_at', { ascending: true }),
-      client.from('budget_config').select('*').or(userFilter),
+    // High-concurrency optimized query: single-key index seek on (user_id)
+    // Eliminates in-memory sorting, BitmapOr scans, and work_mem swap thrashing
+    let [txRes, walletRes, tabsRes, duesRes, presetsRes, budgetRes] = await Promise.all([
+      client
+        .from('transactions')
+        .select('id, type, amount, category, description, date, time, timestamp, payment_method, is_monthly_due, notes, created_at, user_id')
+        .eq('user_id', userId)
+        .order('date', { ascending: false })
+        .limit(250),
+      client
+        .from('wallets')
+        .select('user_id, cash_in_hand, account_balance, last_updated')
+        .eq('user_id', userId),
+      client
+        .from('tabs')
+        .select('id, person_name, amount, type, description, date, status, settled_at, notes, created_at, user_id')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      client
+        .from('monthly_dues')
+        .select('id, title, amount, category, payment_method, due_day_of_month, notes, status, last_paid_date, created_at, user_id')
+        .eq('user_id', userId)
+        .order('due_day_of_month', { ascending: true }),
+      client
+        .from('quick_presets')
+        .select('id, label, amount, category, type, payment_method, icon_name, user_id')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true }),
+      client
+        .from('budget_config')
+        .select('user_id, monthly_limit, daily_allowance, currency, currency_symbol')
+        .eq('user_id', userId),
     ]);
 
-    if (userId !== 'default' && txRes.data && txRes.data.length > 0) {
-      const unclaimed = txRes.data.filter((r) => r.user_id === 'default' || !r.user_id);
-      if (unclaimed.length > 0) {
-        const ids = unclaimed.map((r) => r.id);
-        client.from('transactions').update({ user_id: userId }).in('id', ids).then();
+    // One-time adoption fallback for newly-logged in users with unclaimed default/offline data
+    if (!isDefault) {
+      if (!txRes.data || txRes.data.length === 0) {
+        const fallbackTx = await client
+          .from('transactions')
+          .select('id, type, amount, category, description, date, time, timestamp, payment_method, is_monthly_due, notes, created_at, user_id')
+          .eq('user_id', 'default')
+          .order('date', { ascending: false })
+          .limit(250);
+        if (fallbackTx.data && fallbackTx.data.length > 0) {
+          txRes = fallbackTx;
+          const ids = fallbackTx.data.map((r) => r.id);
+          client.from('transactions').update({ user_id: userId }).in('id', ids).then();
+        }
+      }
+
+      const hasValidWallet = walletRes.data && walletRes.data.length > 0 &&
+        (Number(walletRes.data[0]?.cash_in_hand) > 0 || Number(walletRes.data[0]?.account_balance) > 0);
+
+      if (!hasValidWallet) {
+        const fallbackWallet = await client
+          .from('wallets')
+          .select('user_id, cash_in_hand, account_balance, last_updated')
+          .eq('user_id', 'default')
+          .maybeSingle();
+
+        if (fallbackWallet.data && (Number(fallbackWallet.data.cash_in_hand) > 0 || Number(fallbackWallet.data.account_balance) > 0)) {
+          walletRes.data = [fallbackWallet.data];
+          client.from('wallets').upsert({
+            user_id: userId,
+            cash_in_hand: Number(fallbackWallet.data.cash_in_hand),
+            account_balance: Number(fallbackWallet.data.account_balance),
+            last_updated: Date.now(),
+          }).then();
+        }
+      }
+
+      if (!tabsRes.data || tabsRes.data.length === 0) {
+        const fallbackTabs = await client
+          .from('tabs')
+          .select('id, person_name, amount, type, description, date, status, settled_at, notes, created_at, user_id')
+          .eq('user_id', 'default')
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (fallbackTabs.data && fallbackTabs.data.length > 0) {
+          tabsRes = fallbackTabs;
+          const ids = fallbackTabs.data.map((r) => r.id);
+          client.from('tabs').update({ user_id: userId }).in('id', ids).then();
+        }
+      }
+
+      if (!duesRes.data || duesRes.data.length === 0) {
+        const fallbackDues = await client
+          .from('monthly_dues')
+          .select('id, title, amount, category, payment_method, due_day_of_month, notes, status, last_paid_date, created_at, user_id')
+          .eq('user_id', 'default')
+          .order('due_day_of_month', { ascending: true });
+        if (fallbackDues.data && fallbackDues.data.length > 0) {
+          duesRes = fallbackDues;
+          const ids = fallbackDues.data.map((r) => r.id);
+          client.from('monthly_dues').update({ user_id: userId }).in('id', ids).then();
+        }
       }
     }
 
@@ -517,7 +598,7 @@ export async function uploadLocalDataToCloud(data: {
 
     let schemaMigrationRequired = false;
 
-    // 1. Transactions upsert
+    // 1. Transactions upsert (batched in chunks of 100 to prevent payload memory spikes)
     if (data.transactions.length > 0) {
       const rows = data.transactions.map((tx) => ({
         id: tx.id,
@@ -535,17 +616,20 @@ export async function uploadLocalDataToCloud(data: {
         created_at: tx.createdAt || Date.now(),
         synced: true,
       }));
-      const { error } = await client.from('transactions').upsert(rows, { onConflict: 'id' });
-      if (error) {
-        if (error.message.includes('transactions_type_check')) {
-          schemaMigrationRequired = true;
-          // Gracefully sync non-transfer transactions so standard expenses and income are not blocked
-          const nonTransfers = rows.filter((r) => r.type !== 'transfer');
-          if (nonTransfers.length > 0) {
-            await client.from('transactions').upsert(nonTransfers, { onConflict: 'id' });
+
+      for (let i = 0; i < rows.length; i += 100) {
+        const batch = rows.slice(i, i + 100);
+        const { error } = await client.from('transactions').upsert(batch, { onConflict: 'id' });
+        if (error) {
+          if (error.message.includes('transactions_type_check')) {
+            schemaMigrationRequired = true;
+            const nonTransfers = batch.filter((r) => r.type !== 'transfer');
+            if (nonTransfers.length > 0) {
+              await client.from('transactions').upsert(nonTransfers, { onConflict: 'id' });
+            }
+          } else {
+            throw new Error(`Transactions error: ${error.message}`);
           }
-        } else {
-          throw new Error(`Transactions error: ${error.message}`);
         }
       }
     }
@@ -752,7 +836,7 @@ export async function fetchSuperAdminPlatformStats(): Promise<{
     if (error || !data) {
       // Graceful fallback to client queries if RPC function has not yet been executed in Supabase SQL editor
       const [txCountRes, fbCountRes, usersRes] = await Promise.all([
-        client.from('transactions').select('id, amount', { count: 'exact' }),
+        client.from('transactions').select('id, amount', { count: 'exact' }).limit(100),
         client.from('feedbacks').select('id', { count: 'exact', head: true }),
         client.from('wallets').select('user_id', { count: 'exact', head: true }),
       ]);
