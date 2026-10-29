@@ -70,6 +70,16 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
+-- Ensure budget_config has all expected columns
+DO $$
+BEGIN
+    ALTER TABLE public.budget_config ADD COLUMN IF NOT EXISTS expected_daily_wage NUMERIC DEFAULT 200;
+    ALTER TABLE public.budget_config ADD COLUMN IF NOT EXISTS work_factor NUMERIC DEFAULT 0.70;
+    ALTER TABLE public.budget_config ADD COLUMN IF NOT EXISTS default_wallet TEXT DEFAULT 'Cash';
+    ALTER TABLE public.budget_config ADD COLUMN IF NOT EXISTS theme_preference TEXT DEFAULT 'light';
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
 -- 1. Fix Transactions Type Check & Ensure transfer_direction Column
 ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_type_check;
 ALTER TABLE public.transactions ADD CONSTRAINT transactions_type_check 
@@ -133,29 +143,38 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 5. Automated User Provisioning Trigger
+-- 5. Automated User Provisioning Trigger (Fail-Safe)
 -- Automatically provisions default wallet (₹0 Cash, ₹0 Account) and default quick presets on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
-    -- 1. Initialize user wallet
-    INSERT INTO public.wallets (user_id, cash_in_hand, account_balance, last_updated)
-    VALUES (NEW.id::text, 0, 0, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT)
-    ON CONFLICT (user_id) DO NOTHING;
+    -- 1. Initialize user wallet safely
+    BEGIN
+        INSERT INTO public.wallets (user_id, cash_in_hand, account_balance, last_updated)
+        VALUES (NEW.id::text, 0, 0, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT)
+        ON CONFLICT (user_id) DO NOTHING;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
 
-    -- 2. Initialize default quick presets
-    INSERT INTO public.quick_presets (id, user_id, label, amount, category, type, payment_method, icon_name)
-    VALUES
-        ('qp-chai-' || NEW.id::text, NEW.id::text, 'Chai & Snacks', 50, 'Food & Drinks', 'expense', 'UPI / Bank', 'coffee'),
-        ('qp-lunch-' || NEW.id::text, NEW.id::text, 'Lunch / Meals', 150, 'Food & Drinks', 'expense', 'UPI / Bank', 'utensils'),
-        ('qp-groceries-' || NEW.id::text, NEW.id::text, 'Groceries', 450, 'Groceries & Home', 'expense', 'UPI / Bank', 'shopping-cart'),
-        ('qp-wage-' || NEW.id::text, NEW.id::text, 'Daily Wage / Shift', 200, 'Salary & Wages', 'income', 'Cash', 'banknote')
-    ON CONFLICT (id) DO NOTHING;
+    -- 2. Initialize default quick presets safely
+    BEGIN
+        INSERT INTO public.quick_presets (id, user_id, label, amount, category, type, payment_method, icon_name)
+        VALUES
+            ('qp-chai-' || NEW.id::text, NEW.id::text, 'Chai & Snacks', 50, 'Food & Drinks', 'expense', 'UPI / Bank', 'coffee'),
+            ('qp-lunch-' || NEW.id::text, NEW.id::text, 'Lunch / Meals', 150, 'Food & Drinks', 'expense', 'UPI / Bank', 'utensils'),
+            ('qp-groceries-' || NEW.id::text, NEW.id::text, 'Groceries', 450, 'Groceries & Home', 'expense', 'UPI / Bank', 'shopping-cart'),
+            ('qp-wage-' || NEW.id::text, NEW.id::text, 'Daily Wage / Shift', 200, 'Salary & Wages', 'income', 'Cash', 'banknote')
+        ON CONFLICT (id) DO NOTHING;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
 
-    -- 3. Initialize default budget config
-    INSERT INTO public.budget_config (user_id, monthly_limit, daily_allowance, expected_daily_wage, work_factor, default_wallet, theme_preference, currency, currency_symbol)
-    VALUES (NEW.id::text, 25000, 600, 200, 0.70, 'Cash', 'light', 'INR', '₹')
-    ON CONFLICT (user_id) DO NOTHING;
+    -- 3. Initialize default budget config safely
+    BEGIN
+        INSERT INTO public.budget_config (user_id, monthly_limit, daily_allowance, expected_daily_wage, work_factor, default_wallet, theme_preference, currency, currency_symbol)
+        VALUES (NEW.id::text, 25000, 600, 200, 0.70, 'Cash', 'light', 'INR', '₹')
+        ON CONFLICT (user_id) DO NOTHING;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END;
 
     RETURN NEW;
 END;
