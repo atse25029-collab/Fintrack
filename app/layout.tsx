@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
+    statusBarStyle: 'default',
     title: 'FinTrack',
   },
   applicationName: 'FinTrack',
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#000000',
+  themeColor: '#f4f4f5',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -49,7 +49,8 @@ export default function RootLayout({
         />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="theme-color" content="#f4f4f5" />
       </head>
       <body className="min-h-screen bg-[#f4f4f5] text-zinc-950 flex flex-col font-sans selection:bg-black selection:text-white antialiased">
         <PwaRegister />

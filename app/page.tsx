@@ -23,9 +23,12 @@ import AnalyticsView from '@/components/analytics/AnalyticsView';
 import ProfileSection from '@/components/profile/ProfileSection';
 import PasteSmsModal from '@/components/daily/PasteSmsModal';
 import MonthlyStatementModal from '@/components/analytics/MonthlyStatementModal';
+import AuthScreen from '@/components/auth/AuthScreen';
 import { ParsedSmsTransaction } from '@/lib/parser/smsParser';
 import { checkAndNotifyUpcomingDuesAndTabs } from '@/lib/notifications/notificationService';
 import { initNativeApp } from '@/lib/native/capacitorBridge';
+import { User } from '@supabase/supabase-js';
+import { getSupabaseClient } from '@/lib/supabase/client';
 
 import {
   Transaction,
@@ -45,6 +48,9 @@ import {
   deleteDueFromCloud,
   syncTabToCloud,
   deleteTabFromCloud,
+  getCurrentUser,
+  subscribeToAuthChanges,
+  fetchAllCloudData,
 } from '@/lib/supabase/dbService';
 
 import {
@@ -79,6 +85,10 @@ import { Plus } from 'lucide-react';
 
 export default function HomePage() {
   const [currentSection, setCurrentSection] = useState<AppSection>('daily');
+
+  // User Authentication State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
 
   // Core Data
   const [transactions, setTransactions] = useState<Transaction[]>(INITIAL_TRANSACTIONS);
@@ -125,10 +135,118 @@ export default function HomePage() {
     return false;
   };
 
+  const loadUserDataFromCloud = useCallback(async () => {
+    try {
+      const cloudData = await fetchAllCloudData();
+      if (cloudData) {
+        if (cloudData.transactions && cloudData.transactions.length > 0) {
+          const validTxs = cloudData.transactions.filter(
+            (tx) => !tx.date || tx.date >= '2026-09-04'
+          );
+          setTransactions(validTxs);
+          setLocalTransactions(validTxs);
+        }
+        if (cloudData.wallets) {
+          setWallets(cloudData.wallets);
+          setLocalWallets(cloudData.wallets);
+        }
+        if (cloudData.tabs && cloudData.tabs.length > 0) {
+          setTabs(cloudData.tabs);
+          setLocalTabs(cloudData.tabs);
+        }
+        if (cloudData.dues && cloudData.dues.length > 0) {
+          setDues(cloudData.dues);
+          setLocalDues(cloudData.dues);
+        }
+        if (cloudData.presets && cloudData.presets.length > 0) {
+          setPresets(cloudData.presets);
+          setLocalQuickPresets(cloudData.presets);
+        }
+      }
+    } catch (err) {
+      console.warn('Error loading cloud user data:', err);
+    }
+  }, []);
+
+  const handleDeepLink = useCallback(async (urlStr: string) => {
+    try {
+      const client = getSupabaseClient();
+      if (!client) return;
+
+      const hashIndex = urlStr.indexOf('#');
+      const queryIndex = urlStr.indexOf('?');
+      const paramsStr = hashIndex !== -1 ? urlStr.substring(hashIndex + 1) : queryIndex !== -1 ? urlStr.substring(queryIndex + 1) : '';
+
+      const searchParams = new URLSearchParams(paramsStr);
+      const accessToken = searchParams.get('access_token');
+      const refreshToken = searchParams.get('refresh_token');
+
+      if (accessToken && refreshToken) {
+        const { data, error } = await client.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        if (!error && data?.user) {
+          setCurrentUser(data.user);
+          loadUserDataFromCloud();
+        }
+      }
+    } catch (err) {
+      console.warn('Error processing OAuth deep link:', err);
+    }
+  }, [loadUserDataFromCloud]);
+
   useEffect(() => {
     initNativeApp({
       onHardwareBack: () => backHandlerRef.current(),
+      onDeepLink: (url) => handleDeepLink(url),
     });
+
+    const handleCustomDeepLink = (e: any) => {
+      if (e?.detail?.url) handleDeepLink(e.detail.url);
+    };
+    window.addEventListener('fintrack_deeplink', handleCustomDeepLink);
+    return () => window.removeEventListener('fintrack_deeplink', handleCustomDeepLink);
+  }, [handleDeepLink]);
+
+  useEffect(() => {
+    let mounted = true;
+    getCurrentUser().then((user) => {
+      if (mounted) {
+        setCurrentUser(user);
+        setIsAuthChecking(false);
+        if (user) {
+          loadUserDataFromCloud();
+        }
+      }
+    });
+
+    const sub = subscribeToAuthChanges((user) => {
+      if (mounted) {
+        setCurrentUser(user);
+        setIsAuthChecking(false);
+        if (user) {
+          loadUserDataFromCloud();
+        }
+      }
+    });
+
+    return () => {
+      mounted = false;
+      sub?.unsubscribe?.();
+    };
+  }, [loadUserDataFromCloud]);
+
+  const handleSignOutClean = useCallback(() => {
+    setCurrentUser(null);
+    setLocalTransactions([]);
+    setLocalWallets(DEFAULT_WALLETS);
+    setLocalTabs([]);
+    setLocalDues([]);
+    setTransactions([]);
+    setWallets(DEFAULT_WALLETS);
+    setTabs([]);
+    setDues([]);
   }, []);
 
   // Initial load from storage (purges any transactions before Sep 4, 2026)
@@ -607,11 +725,13 @@ export default function HomePage() {
         }
 
         setLocalDues(updated);
+        const targetDue = dueData.id ? updated.find((d) => d.id === dueData.id) || (dueData as MonthlyDue) : updated[0];
         fetch('/api/dues', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(dueData.id ? dueData : updated[0]),
+          body: JSON.stringify(targetDue),
         }).catch(() => {});
+        syncDueToCloud(targetDue).catch(() => {});
 
         return updated;
       });
@@ -639,6 +759,7 @@ export default function HomePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...due, status: 'paid', lastPaidDate: today }),
         }).catch(() => {});
+        syncDueToCloud({ ...due, status: 'paid', lastPaidDate: today }).catch(() => {});
         return updated;
       });
 
@@ -664,6 +785,7 @@ export default function HomePage() {
       });
 
       fetch(`/api/dues?id=${id}`, { method: 'DELETE' }).catch(() => {});
+      deleteDueFromCloud(id).catch(() => {});
     },
     []
   );
@@ -690,12 +812,14 @@ export default function HomePage() {
           updated = [newTab, ...prev];
         }
 
+        const targetTab = tabData.id ? updated.find((t) => t.id === tabData.id) || (tabData as TabItem) : updated[0];
         setLocalTabs(updated);
         fetch('/api/tabs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(tabData.id ? tabData : updated[0]),
+          body: JSON.stringify(targetTab),
         }).catch(() => {});
+        syncTabToCloud(targetTab).catch(() => {});
 
         return updated;
       });
@@ -764,6 +888,7 @@ export default function HomePage() {
       });
 
       fetch(`/api/tabs?id=${id}`, { method: 'DELETE' }).catch(() => {});
+      deleteTabFromCloud(id).catch(() => {});
     },
     []
   );
@@ -961,6 +1086,32 @@ export default function HomePage() {
     return reminders.filter((r) => !r.isPaidThisMonth && (r.isOverdue || r.isDueToday)).length;
   }, [dues]);
 
+  if (isAuthChecking) {
+    return (
+      <div className="min-h-screen w-full bg-[#f4f4f5] flex flex-col items-center justify-center space-y-3">
+        <div className="w-10 h-10 rounded-2xl bg-black flex items-center justify-center text-white shadow-md">
+          <div className="flex items-end gap-1 h-4">
+            <div className="w-0.5 bg-white h-1.5 rounded-full" />
+            <div className="w-0.5 bg-white h-2.5 rounded-full" />
+            <div className="w-0.5 bg-white h-4 rounded-full" />
+          </div>
+        </div>
+        <span className="text-xs font-mono text-zinc-500 animate-pulse">FinTrack Initializing...</span>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <AuthScreen
+        onAuthSuccess={(user) => {
+          setCurrentUser(user);
+          loadUserDataFromCloud();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen w-full bg-[#f4f4f5] flex flex-col selection:bg-black selection:text-white">
       {/* Top Navbar */}
@@ -1121,6 +1272,7 @@ export default function HomePage() {
                 wallets={wallets}
                 dues={dues}
                 tabs={tabs}
+                currentUserEmail={currentUser?.email || null}
                 onOpenStatement={() => setIsStatementOpen(true)}
                 onNavigateToTabs={() => setCurrentSection('tabs')}
               />
@@ -1146,6 +1298,7 @@ export default function HomePage() {
                 onCloudSyncSuccess={handleCloudSyncSuccess}
                 onClearAllData={handleClearAll}
                 onOpenStatement={() => setIsStatementOpen(true)}
+                onSignOut={handleSignOutClean}
               />
             </motion.div>
           )}
@@ -1170,7 +1323,7 @@ export default function HomePage() {
           }
         }}
         aria-label="Add new item"
-        className="md:hidden fixed bottom-20 right-3.5 z-40 p-3 bg-black text-white rounded-full shadow-2xl hover:bg-zinc-800 transition-colors border border-zinc-800 cursor-pointer"
+        className="md:hidden fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] right-3.5 z-40 p-3 bg-black text-white rounded-full shadow-2xl hover:bg-zinc-800 transition-colors border border-zinc-800 cursor-pointer"
       >
         <Plus className="w-5 h-5 stroke-[2.5]" />
       </motion.button>

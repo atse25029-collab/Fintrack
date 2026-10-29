@@ -1,5 +1,7 @@
 import { MonthlyDue, TabItem } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
 
 export interface NotificationPreferences {
   enabled: boolean;
@@ -12,27 +14,74 @@ const DEFAULT_PREFS: NotificationPreferences = {
   enabled: true,
   notifyDues: true,
   notifyTabs: true,
-  frequencyHours: 5, // ~2 to 3 times a day
+  frequencyHours: 5,
 };
 
 const PREFS_KEY = 'fintrack_notification_prefs';
 const HISTORY_KEY = 'fintrack_notification_history';
+const CHANNEL_ID = 'fintrack_reminders';
+
+let channelCreated = false;
+
+async function ensureNotificationChannel() {
+  if (channelCreated || !Capacitor.isNativePlatform()) return;
+  try {
+    await LocalNotifications.createChannel({
+      id: CHANNEL_ID,
+      name: 'FinTrack Reminders',
+      description: 'Reminders for upcoming monthly dues, bills and tabs',
+      importance: 5,
+      visibility: 1,
+      vibration: true,
+      sound: undefined,
+    });
+    channelCreated = true;
+  } catch (err) {
+    console.warn('Failed to create native notification channel:', err);
+  }
+}
 
 // ==========================================
-// Browser & Permission Utilities
+// Browser & Native Permission Utilities
 // ==========================================
 
 export function isNotificationSupported(): boolean {
-  return typeof window !== 'undefined' && 'Notification' in window;
+  if (typeof window === 'undefined') return false;
+  if (Capacitor.isNativePlatform()) return true;
+  return 'Notification' in window;
 }
 
-export function getNotificationPermission(): NotificationPermission | 'unsupported' {
+export async function getNotificationPermission(): Promise<NotificationPermission | 'unsupported'> {
   if (!isNotificationSupported()) return 'unsupported';
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const status = await LocalNotifications.checkPermissions();
+      if (status.display === 'granted') return 'granted';
+      if (status.display === 'denied') return 'denied';
+      return 'default';
+    } catch {
+      return 'default';
+    }
+  }
+
   return Notification.permission;
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
   if (!isNotificationSupported()) return false;
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await ensureNotificationChannel();
+      const status = await LocalNotifications.requestPermissions();
+      return status.display === 'granted';
+    } catch (err) {
+      console.error('Error requesting native notification permission:', err);
+      return false;
+    }
+  }
+
   if (Notification.permission === 'granted') return true;
   if (Notification.permission === 'denied') return false;
 
@@ -48,7 +97,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
     }
     return perm === 'granted';
   } catch (err) {
-    console.error('Error requesting notification permission:', err);
+    console.error('Error requesting browser notification permission:', err);
     return false;
   }
 }
@@ -83,7 +132,6 @@ export function setNotificationPreferences(prefs: Partial<NotificationPreference
 
 // ==========================================
 // Anti-Spam History Tracking
-// Allows reminders up to 2-3 times a day (every ~5 hours)
 // ==========================================
 
 function getNotificationHistory(): Record<string, number> {
@@ -118,29 +166,22 @@ function shouldNotify(key: string, cooldownHours: number = 5): boolean {
 }
 
 // ==========================================
-// Safe Service Worker Registration Helper
+// Safe Service Worker Registration Helper (Web)
 // ==========================================
 
 async function getSwRegistration(timeoutMs = 1200): Promise<ServiceWorkerRegistration | null> {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null;
 
   try {
-    // 1. Check if already active/registered
     const existing = await navigator.serviceWorker.getRegistration();
-    if (existing) {
-      return existing;
-    }
+    if (existing) return existing;
   } catch {}
 
   try {
-    // 2. Proactively trigger registration if missing
     const registered = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-    if (registered) {
-      return registered;
-    }
+    if (registered) return registered;
   } catch {}
 
-  // 3. Race navigator.serviceWorker.ready against a fast timeout
   try {
     const readyPromise = navigator.serviceWorker.ready;
     const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
@@ -151,16 +192,44 @@ async function getSwRegistration(timeoutMs = 1200): Promise<ServiceWorkerRegistr
 }
 
 // ==========================================
-// Native Notification Dispatcher
+// Native & Web Notification Dispatcher
 // ==========================================
 
 export async function sendNativeNotification(
   title: string,
   options?: NotificationOptions & { section?: string }
 ): Promise<boolean> {
-  if (!isNotificationSupported() || Notification.permission !== 'granted') {
-    return false;
+  if (!isNotificationSupported()) return false;
+
+  // 1. Android Native via Capacitor LocalNotifications
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await ensureNotificationChannel();
+      const notifId = Math.floor(Math.random() * 1000000);
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: notifId,
+            title,
+            body: options?.body || '',
+            channelId: CHANNEL_ID,
+            smallIcon: 'ic_launcher_foreground',
+            iconColor: '#000000',
+            extra: {
+              section: options?.section || 'dues',
+            },
+          },
+        ],
+      });
+      return true;
+    } catch (err) {
+      console.warn('Capacitor LocalNotification dispatch failed:', err);
+      return false;
+    }
   }
+
+  // 2. Web Notification
+  if (Notification.permission !== 'granted') return false;
 
   const defaultOptions: NotificationOptions = {
     icon: '/icons/icon-192.png',
@@ -169,7 +238,7 @@ export async function sendNativeNotification(
     ...options,
   };
 
-  // 1. Try Service Worker Registration (Required on mobile / Android Chrome)
+  // Try Service Worker Registration first
   try {
     const reg = await getSwRegistration(1200);
     if (reg && typeof reg.showNotification === 'function') {
@@ -180,7 +249,7 @@ export async function sendNativeNotification(
     console.warn('ServiceWorker showNotification failed, trying fallback:', err);
   }
 
-  // 2. Direct Window Notification Fallback (Desktop / browsers supporting new Notification)
+  // Direct Window Notification Fallback
   try {
     const notif = new Notification(title, defaultOptions);
     notif.onclick = () => {
@@ -201,21 +270,20 @@ export async function sendNativeNotification(
 export async function sendTestNotification(): Promise<boolean> {
   if (!isNotificationSupported()) return false;
 
-  const currentPerm = Notification.permission;
-  if (currentPerm !== 'granted') {
+  const perm = await getNotificationPermission();
+  if (perm !== 'granted') {
     const granted = await requestNotificationPermission();
     if (!granted) return false;
   }
 
-  // Enforce a hard timeout so UI never hangs
   try {
     const dispatchPromise = sendNativeNotification('🎉 FinTrack Notifications Active!', {
-      body: 'You will receive alerts on this device 2–3 times a day when a monthly due or tab is near.',
+      body: 'You will receive native alerts on this device when a monthly due or tab is approaching.',
       tag: 'test-notification',
       section: 'dues',
     });
 
-    const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2500));
+    const timeoutPromise = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000));
     return await Promise.race([dispatchPromise, timeoutPromise]);
   } catch (err) {
     console.error('sendTestNotification error:', err);
@@ -231,9 +299,10 @@ export async function checkAndNotifyUpcomingDuesAndTabs(
   dues: MonthlyDue[],
   tabs: TabItem[]
 ): Promise<void> {
-  if (!isNotificationSupported() || Notification.permission !== 'granted') {
-    return;
-  }
+  if (!isNotificationSupported()) return;
+
+  const perm = await getNotificationPermission();
+  if (perm !== 'granted') return;
 
   const prefs = getNotificationPreferences();
   if (!prefs.enabled) return;
@@ -245,7 +314,6 @@ export async function checkAndNotifyUpcomingDuesAndTabs(
   // 1. Check Monthly Dues
   if (prefs.notifyDues && dues.length > 0) {
     for (const due of dues) {
-      // Skip if paid this month
       if (due.status === 'paid' && due.lastPaidDate?.startsWith(currentMonthStr)) {
         continue;
       }
@@ -253,7 +321,6 @@ export async function checkAndNotifyUpcomingDuesAndTabs(
       const dueDay = due.dueDayOfMonth;
       const daysUntilDue = dueDay - currentDay;
 
-      // Notify if due today, tomorrow, or in 2 days, or overdue
       let title = '';
       let body = '';
       let notifKey = '';
@@ -294,11 +361,9 @@ export async function checkAndNotifyUpcomingDuesAndTabs(
     for (const tab of tabs) {
       if (tab.status === 'settled') continue;
 
-      // Check age of tab
       const createdDate = new Date(tab.date + 'T00:00:00').getTime();
       const ageDays = Math.floor((Date.now() - createdDate) / (1000 * 60 * 60 * 24));
 
-      // Remind if pending for 2 or more days
       if (ageDays >= 2) {
         const isOwedToYou = tab.type === 'owed_to_you';
         const title = isOwedToYou

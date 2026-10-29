@@ -60,7 +60,7 @@ export default function Header({
   ];
 
   return (
-    <header className="sticky top-0 z-30 bg-[#f4f4f5]/95 backdrop-blur-md border-b border-zinc-200 py-2.5 px-3 sm:px-6 w-full max-w-full">
+    <header className="sticky top-0 z-30 bg-[#f4f4f5]/95 backdrop-blur-md border-b border-zinc-200 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 px-3 sm:px-6 w-full max-w-full">
       <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-4 w-full">
         {/* Left: Brand Logo + Brand Name */}
         <div className="flex items-center gap-2.5 min-w-0 shrink-0">

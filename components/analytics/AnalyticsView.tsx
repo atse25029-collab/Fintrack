@@ -19,6 +19,7 @@ import {
   calculateTimeOfDayStats,
   calculateFinancialStats,
 } from '@/lib/utils';
+import AdminPlatformDashboard from './AdminPlatformDashboard';
 import {
   BarChart3,
   PieChart,
@@ -44,6 +45,7 @@ interface AnalyticsViewProps {
   wallets?: WalletBalances;
   dues?: MonthlyDue[];
   tabs?: TabItem[];
+  currentUserEmail?: string | null;
   onOpenStatement?: () => void;
   onNavigateToTabs?: () => void;
 }
@@ -53,9 +55,12 @@ export default function AnalyticsView({
   wallets,
   dues = [],
   tabs = [],
+  currentUserEmail,
   onOpenStatement,
   onNavigateToTabs,
 }: AnalyticsViewProps) {
+  const isSuperAdmin = currentUserEmail === 'smohamedfarook2024@gmail.com';
+  const [adminTab, setAdminTab] = useState<'personal' | 'platform'>('personal');
   const [timeframe, setTimeframe] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [categoryType, setCategoryType] = useState<'expense' | 'income'>('expense');
   const [hoveredPoint, setHoveredPoint] = useState<TimeframeSpendingPoint | null>(null);
@@ -321,7 +326,40 @@ export default function AnalyticsView({
 
   return (
     <div className="space-y-5 sm:space-y-6 w-full max-w-full overflow-hidden">
-      {/* Header & Controls */}
+      {/* Super Admin Switcher */}
+      {isSuperAdmin && (
+        <div className="flex rounded-xl bg-zinc-200/80 p-1 border border-zinc-300 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setAdminTab('personal')}
+            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              adminTab === 'personal'
+                ? 'bg-white text-black shadow-xs font-bold'
+                : 'text-zinc-600 hover:text-black'
+            }`}
+          >
+            Personal Finances
+          </button>
+          <button
+            type="button"
+            onClick={() => setAdminTab('platform')}
+            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+              adminTab === 'platform'
+                ? 'bg-black text-white shadow-xs font-bold'
+                : 'text-zinc-600 hover:text-black'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+            <span>Super Admin Platform</span>
+          </button>
+        </div>
+      )}
+
+      {isSuperAdmin && adminTab === 'platform' ? (
+        <AdminPlatformDashboard />
+      ) : (
+        <>
+          {/* Header & Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -1044,6 +1082,8 @@ export default function AnalyticsView({
             ))}
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

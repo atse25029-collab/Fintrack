@@ -10,6 +10,7 @@ export const isNativePlatform = (): boolean => {
 
 export const initNativeApp = async (options?: {
   onHardwareBack?: () => boolean; // return true if handled (e.g. closed a modal)
+  onDeepLink?: (url: string) => void;
 }) => {
   if (!isNativePlatform()) return;
 
@@ -17,8 +18,8 @@ export const initNativeApp = async (options?: {
     // 1. Hide splash screen smoothly after app initialization
     await SplashScreen.hide();
 
-    // 2. Configure light-mode status bar
-    await StatusBar.setStyle({ style: Style.Light });
+    // 2. Configure light-mode status bar (Style.Dark = dark icons on light background)
+    await StatusBar.setStyle({ style: Style.Dark });
     await StatusBar.setBackgroundColor({ color: '#FFFFFF' });
 
     // 3. Hardware Back Button Listener
@@ -31,6 +32,18 @@ export const initNativeApp = async (options?: {
         window.history.back();
       } else {
         App.exitApp();
+      }
+    });
+
+    // 4. Deep Link Listener for OAuth callbacks (Google Sign-In, etc.)
+    App.addListener('appUrlOpen', (data) => {
+      if (data?.url) {
+        if (options?.onDeepLink) {
+          options.onDeepLink(data.url);
+        } else {
+          // Default: dispatch event for auth listeners
+          window.dispatchEvent(new CustomEvent('fintrack_deeplink', { detail: { url: data.url } }));
+        }
       }
     });
   } catch (err) {

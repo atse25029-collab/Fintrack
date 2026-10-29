@@ -1,4 +1,5 @@
 import { getSupabaseClient, isSupabaseConfigured } from './client';
+import { Capacitor } from '@capacitor/core';
 import {
   Transaction,
   WalletBalances,
@@ -40,6 +41,25 @@ export async function signInWithEmail(email: string, password: string) {
   const client = getSupabaseClient();
   if (!client) throw new Error('Supabase is not configured yet');
   return await client.auth.signInWithPassword({ email, password });
+}
+
+export async function signInWithGoogle() {
+  const client = getSupabaseClient();
+  if (!client) throw new Error('Supabase is not configured yet');
+
+  const redirectTo =
+    typeof window !== 'undefined'
+      ? Capacitor.isNativePlatform()
+        ? 'com.fintrack.app://auth-callback'
+        : `${window.location.origin}`
+      : undefined;
+
+  return await client.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo,
+    },
+  });
 }
 
 export async function signOutUser() {
@@ -311,13 +331,16 @@ export async function fetchAllCloudData(): Promise<{
   if (!client) return null;
 
   try {
+    const user = await getCurrentUser();
+    const userId = user?.id || 'default';
+
     const [txRes, walletRes, tabsRes, duesRes, presetsRes, budgetRes] = await Promise.all([
-      client.from('transactions').select('*').order('date', { ascending: false }),
-      client.from('wallets').select('*').limit(1).maybeSingle(),
-      client.from('tabs').select('*').order('created_at', { ascending: false }),
-      client.from('monthly_dues').select('*').order('due_day_of_month', { ascending: true }),
-      client.from('quick_presets').select('*').order('created_at', { ascending: true }),
-      client.from('budget_config').select('*').limit(1).maybeSingle(),
+      client.from('transactions').select('*').eq('user_id', userId).order('date', { ascending: false }),
+      client.from('wallets').select('*').eq('user_id', userId).maybeSingle(),
+      client.from('tabs').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+      client.from('monthly_dues').select('*').eq('user_id', userId).order('due_day_of_month', { ascending: true }),
+      client.from('quick_presets').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
+      client.from('budget_config').select('*').eq('user_id', userId).maybeSingle(),
     ]);
 
     if (duesRes.error) {
@@ -559,5 +582,133 @@ export async function uploadLocalDataToCloud(data: {
   } catch (err: any) {
     console.error('Failed to upload data to Supabase:', err);
     return { success: false, error: err.message || 'Upload failed' };
+  }
+}
+
+// ==========================================
+// User Feedback & Super Admin Services
+// ==========================================
+
+export interface UserFeedback {
+  id: string;
+  userId: string;
+  userEmail: string;
+  category: 'feature_request' | 'bug_report' | 'general';
+  rating: number; // 1 to 5
+  message: string;
+  platform: string;
+  status: 'unread' | 'reviewed';
+  createdAt: number;
+}
+
+export async function submitUserFeedback(data: {
+  category: 'feature_request' | 'bug_report' | 'general';
+  rating: number;
+  message: string;
+}): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) return { success: false, error: 'Database not connected' };
+
+  try {
+    const user = await getCurrentUser();
+    const feedbackId = `fb-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const platform = typeof window !== 'undefined' && Capacitor.isNativePlatform() ? 'android_apk' : 'web';
+
+    const { error } = await client.from('feedbacks').insert({
+      id: feedbackId,
+      user_id: user?.id || 'default',
+      user_email: user?.email || 'anonymous',
+      category: data.category,
+      rating: data.rating,
+      message: data.message,
+      platform,
+      status: 'unread',
+      created_at: Date.now(),
+    });
+
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('Error submitting feedback:', err);
+    return { success: false, error: err.message || 'Failed to submit feedback' };
+  }
+}
+
+export async function fetchAllFeedbacksForAdmin(): Promise<UserFeedback[]> {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  try {
+    const { data, error } = await client
+      .from('feedbacks')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error || !Array.isArray(data)) return [];
+    return data.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      userEmail: row.user_email,
+      category: row.category,
+      rating: row.rating,
+      message: row.message,
+      platform: row.platform,
+      status: row.status,
+      createdAt: Number(row.created_at),
+    }));
+  } catch (err) {
+    console.warn('Error fetching feedbacks for admin:', err);
+    return [];
+  }
+}
+
+export async function updateFeedbackStatus(id: string, status: 'unread' | 'reviewed'): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const { error } = await client.from('feedbacks').update({ status }).eq('id', id);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchSuperAdminPlatformStats(): Promise<{
+  totalUsers: number;
+  totalTransactions: number;
+  grossTransactionVolume: number;
+  totalFeedbacks: number;
+  pendingDuesAcrossSystem: number;
+  timestamp: number;
+} | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    const { data, error } = await client.rpc('get_super_admin_analytics');
+    if (error || !data) {
+      // Graceful fallback to client queries if RPC function has not yet been executed in Supabase SQL editor
+      const [txCountRes, fbCountRes, usersRes] = await Promise.all([
+        client.from('transactions').select('id, amount', { count: 'exact' }),
+        client.from('feedbacks').select('id', { count: 'exact', head: true }),
+        client.from('wallets').select('user_id', { count: 'exact', head: true }),
+      ]);
+
+      const gross = (txCountRes.data || []).reduce((sum: number, r: any) => sum + (Number(r.amount) || 0), 0);
+
+      return {
+        totalUsers: usersRes.count || 1,
+        totalTransactions: txCountRes.count || 0,
+        grossTransactionVolume: gross,
+        totalFeedbacks: fbCountRes.count || 0,
+        pendingDuesAcrossSystem: 0,
+        timestamp: Date.now(),
+      };
+    }
+    return data;
+  } catch (err) {
+    console.warn('Error in fetchSuperAdminPlatformStats:', err);
+    return null;
   }
 }

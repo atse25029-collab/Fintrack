@@ -1,4 +1,5 @@
 import { Transaction, BudgetConfig, TabItem, MonthlyDue, WalletBalances, QuickPreset } from '../types';
+import { Capacitor } from '@capacitor/core';
 import {
   INITIAL_TRANSACTIONS,
   DEFAULT_BUDGET,
@@ -209,8 +210,8 @@ export async function syncWithVercelServer(
     budget: getLocalBudget(),
   };
 
-  if (typeof window === 'undefined' || !navigator.onLine) {
-    onStatusChange?.('offline');
+  if (typeof window === 'undefined' || !navigator.onLine || Capacitor.isNativePlatform()) {
+    onStatusChange?.('idle');
     return fallback;
   }
 

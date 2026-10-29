@@ -4,6 +4,7 @@ const config: CapacitorConfig = {
   appId: 'com.fintrack.app',
   appName: 'FinTrack',
   webDir: 'out',
+  backgroundColor: '#f4f4f5',
   server: {
     androidScheme: 'https',
   },
@@ -19,6 +20,10 @@ const config: CapacitorConfig = {
     StatusBar: {
       style: 'DARK',
       backgroundColor: '#ffffff',
+    },
+    LocalNotifications: {
+      smallIcon: 'ic_launcher_foreground',
+      iconColor: '#000000',
     },
   },
 };

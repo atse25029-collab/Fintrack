@@ -51,6 +51,7 @@ import {
   sendTestNotification,
   NotificationPreferences,
 } from '@/lib/notifications/notificationService';
+import FeedbackCard from './FeedbackCard';
 
 interface ProfileSectionProps {
   transactions: Transaction[];
@@ -69,6 +70,7 @@ interface ProfileSectionProps {
   }) => void;
   onClearAllData: () => void;
   onOpenStatement?: () => void;
+  onSignOut?: () => void;
 }
 
 export default function ProfileSection({
@@ -81,6 +83,7 @@ export default function ProfileSection({
   onCloudSyncSuccess,
   onClearAllData,
   onOpenStatement,
+  onSignOut,
 }: ProfileSectionProps) {
   const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -124,7 +127,7 @@ export default function ProfileSection({
   // Notifications init
   useEffect(() => {
     if (isNotificationSupported()) {
-      setNotifPermission(getNotificationPermission());
+      getNotificationPermission().then((perm) => setNotifPermission(perm));
       setNotifPrefs(getNotificationPreferences());
     } else {
       setNotifPermission('unsupported');
@@ -133,7 +136,8 @@ export default function ProfileSection({
 
   const handleRequestPermission = async () => {
     const granted = await requestNotificationPermission();
-    setNotifPermission(getNotificationPermission());
+    const perm = await getNotificationPermission();
+    setNotifPermission(perm);
     if (granted) {
       setNotifFeedback('Notifications enabled! You will receive timely alerts for upcoming dues & tabs.');
       setTimeout(() => setNotifFeedback(null), 4000);
@@ -197,6 +201,7 @@ export default function ProfileSection({
     try {
       await signOutUser();
       setCurrentUser(null);
+      onSignOut?.();
       setMessage({ type: 'success', text: 'Signed out successfully' });
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Sign out failed' });
@@ -703,6 +708,9 @@ export default function ProfileSection({
           </button>
         </div>
       )}
+
+      {/* User Feedback & Suggestions */}
+      <FeedbackCard />
 
       {/* Local Device Diagnostics & Stats */}
       <div className="p-4 sm:p-5 bg-white rounded-2xl border border-zinc-200 shadow-sm space-y-3">
