@@ -345,11 +345,11 @@ export async function fetchAllCloudData(): Promise<{
 
     const [txRes, walletRes, tabsRes, duesRes, presetsRes, budgetRes] = await Promise.all([
       client.from('transactions').select('*').or(userFilter).order('date', { ascending: false }),
-      client.from('wallets').select('*').or(userFilter).maybeSingle(),
+      client.from('wallets').select('*').or(userFilter),
       client.from('tabs').select('*').or(userFilter).order('created_at', { ascending: false }),
       client.from('monthly_dues').select('*').or(userFilter).order('due_day_of_month', { ascending: true }),
       client.from('quick_presets').select('*').or(userFilter).order('created_at', { ascending: true }),
-      client.from('budget_config').select('*').or(userFilter).maybeSingle(),
+      client.from('budget_config').select('*').or(userFilter),
     ]);
 
     if (userId !== 'default' && txRes.data && txRes.data.length > 0) {
@@ -389,11 +389,51 @@ export async function fetchAllCloudData(): Promise<{
       }));
     }
 
-    if (walletRes.data) {
+    if (walletRes.data && Array.isArray(walletRes.data) && walletRes.data.length > 0) {
+      // Find wallet for current authenticated user
+      const userWallet = walletRes.data.find((w) => w.user_id === userId);
+      // Find default/unassigned wallet
+      const defaultWallet = walletRes.data.find((w) => w.user_id === 'default' || !w.user_id);
+
+      // Prioritize the wallet that actually has positive money balances
+      let chosenWallet = userWallet || defaultWallet;
+      if (
+        userWallet &&
+        defaultWallet &&
+        Number(userWallet.cash_in_hand) === 0 &&
+        Number(userWallet.account_balance) === 0 &&
+        (Number(defaultWallet.cash_in_hand) > 0 || Number(defaultWallet.account_balance) > 0)
+      ) {
+        chosenWallet = defaultWallet;
+        // Claim and sync the positive balances to the user's account in Supabase
+        client.from('wallets').upsert({
+          user_id: userId,
+          cash_in_hand: Number(defaultWallet.cash_in_hand),
+          account_balance: Number(defaultWallet.account_balance),
+          last_updated: Date.now(),
+        }).then();
+      } else if (!userWallet && defaultWallet && userId !== 'default') {
+        client.from('wallets').upsert({
+          user_id: userId,
+          cash_in_hand: Number(defaultWallet.cash_in_hand),
+          account_balance: Number(defaultWallet.account_balance),
+          last_updated: Date.now(),
+        }).then();
+      }
+
+      if (chosenWallet) {
+        result.wallets = {
+          cashInHand: isNaN(Number(chosenWallet.cash_in_hand)) ? 0 : Number(chosenWallet.cash_in_hand),
+          accountBalance: isNaN(Number(chosenWallet.account_balance)) ? 0 : Number(chosenWallet.account_balance),
+          lastUpdated: Number(chosenWallet.last_updated) || Date.now(),
+        };
+      }
+    } else if (walletRes.data && !Array.isArray(walletRes.data)) {
+      const singleWallet = walletRes.data as any;
       result.wallets = {
-        cashInHand: isNaN(Number(walletRes.data.cash_in_hand)) ? 0 : Number(walletRes.data.cash_in_hand),
-        accountBalance: isNaN(Number(walletRes.data.account_balance)) ? 0 : Number(walletRes.data.account_balance),
-        lastUpdated: Number(walletRes.data.last_updated) || Date.now(),
+        cashInHand: isNaN(Number(singleWallet.cash_in_hand)) ? 0 : Number(singleWallet.cash_in_hand),
+        accountBalance: isNaN(Number(singleWallet.account_balance)) ? 0 : Number(singleWallet.account_balance),
+        lastUpdated: Number(singleWallet.last_updated) || Date.now(),
       };
     }
 
@@ -440,12 +480,17 @@ export async function fetchAllCloudData(): Promise<{
     }
 
     if (budgetRes.data) {
-      result.budget = {
-        monthlyLimit: Number(budgetRes.data.monthly_limit),
-        dailyAllowance: Number(budgetRes.data.daily_allowance),
-        currency: budgetRes.data.currency || 'INR',
-        currencySymbol: budgetRes.data.currency_symbol || '₹',
-      };
+      const budgetRow = Array.isArray(budgetRes.data)
+        ? budgetRes.data.find((b) => b.user_id === userId) || budgetRes.data[0]
+        : budgetRes.data;
+      if (budgetRow) {
+        result.budget = {
+          monthlyLimit: Number(budgetRow.monthly_limit),
+          dailyAllowance: Number(budgetRow.daily_allowance),
+          currency: budgetRow.currency || 'INR',
+          currencySymbol: budgetRow.currency_symbol || '₹',
+        };
+      }
     }
 
     return result;
