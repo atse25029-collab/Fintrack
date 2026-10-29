@@ -224,7 +224,54 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 7. Row Level Security Policies
+-- 6.5. Permanent Isolation & Reassignment of Legacy 'default' Data
+-- Migrates all existing default/unassigned balances and records strictly to smohamedfarook2024@gmail.com
+-- and deletes the 'default' records so no other account can ever see or inherit them.
+DO $$
+DECLARE
+    admin_uid TEXT;
+    def_cash NUMERIC := 0;
+    def_acc NUMERIC := 0;
+BEGIN
+    SELECT id::text INTO admin_uid FROM auth.users WHERE email = 'smohamedfarook2024@gmail.com' LIMIT 1;
+    
+    IF admin_uid IS NOT NULL THEN
+        -- Get positive funds from default if any
+        SELECT COALESCE(cash_in_hand, 0), COALESCE(account_balance, 0) INTO def_cash, def_acc 
+        FROM public.wallets WHERE user_id = 'default' LIMIT 1;
+
+        -- Ensure admin's wallet has the rightful balances
+        INSERT INTO public.wallets (user_id, cash_in_hand, account_balance, last_updated)
+        VALUES (admin_uid, COALESCE(def_cash, 0), COALESCE(def_acc, 0), (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT)
+        ON CONFLICT (user_id) DO UPDATE 
+        SET cash_in_hand = CASE WHEN public.wallets.cash_in_hand = 0 AND def_cash > 0 THEN def_cash ELSE public.wallets.cash_in_hand END,
+            account_balance = CASE WHEN public.wallets.account_balance = 0 AND def_acc > 0 THEN def_acc ELSE public.wallets.account_balance END;
+
+        -- Assign default transactions, tabs, dues to admin
+        UPDATE public.transactions SET user_id = admin_uid WHERE user_id = 'default' OR user_id IS NULL;
+        UPDATE public.tabs SET user_id = admin_uid WHERE user_id = 'default' OR user_id IS NULL;
+        UPDATE public.monthly_dues SET user_id = admin_uid WHERE user_id = 'default' OR user_id IS NULL;
+        UPDATE public.quick_presets SET user_id = admin_uid WHERE user_id = 'default' OR user_id IS NULL;
+        UPDATE public.budget_config SET user_id = admin_uid WHERE user_id = 'default' OR user_id IS NULL;
+        
+        -- Delete default row so no other user can ever touch it
+        DELETE FROM public.wallets WHERE user_id = 'default';
+        DELETE FROM public.transactions WHERE user_id = 'default';
+        DELETE FROM public.tabs WHERE user_id = 'default';
+        DELETE FROM public.monthly_dues WHERE user_id = 'default';
+
+        -- Reset any non-admin accounts that had the default balance accidentally copied to them
+        -- if they have zero transactions of their own
+        UPDATE public.wallets
+        SET cash_in_hand = 0, account_balance = 0
+        WHERE user_id <> admin_uid
+        AND user_id NOT IN (
+            SELECT DISTINCT user_id FROM public.transactions WHERE user_id IS NOT NULL AND user_id <> admin_uid
+        );
+    END IF;
+END $$;
+
+-- 7. Row Level Security Policies (Strict Multi-Tenant Isolation)
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wallets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tabs ENABLE ROW LEVEL SECURITY;
@@ -244,38 +291,37 @@ DROP POLICY IF EXISTS "User isolate feedbacks" ON public.feedbacks;
 DROP POLICY IF EXISTS "Admin view feedbacks" ON public.feedbacks;
 DROP POLICY IF EXISTS "Allow all for feedbacks" ON public.feedbacks;
 
--- User-scoped policies with (select auth.uid())::text subquery optimization
--- Wrapping auth.uid() in a subquery causes PostgreSQL to evaluate it ONCE per query (InitPlan)
--- rather than once per row, preventing severe CPU and RAM exhaustion under high concurrent load.
+-- User-scoped policies: STRICTLY isolated by auth.uid()
+-- No user can EVER read or write another user's wallet, transactions, tabs, or dues
 CREATE POLICY "User isolate transactions" ON public.transactions
     FOR ALL TO authenticated
-    USING ((select auth.uid())::text = user_id OR user_id = 'default')
-    WITH CHECK ((select auth.uid())::text = user_id OR user_id = 'default');
+    USING ((select auth.uid())::text = user_id)
+    WITH CHECK ((select auth.uid())::text = user_id);
 
 CREATE POLICY "User isolate wallets" ON public.wallets
     FOR ALL TO authenticated
-    USING ((select auth.uid())::text = user_id OR user_id = 'default')
-    WITH CHECK ((select auth.uid())::text = user_id OR user_id = 'default');
+    USING ((select auth.uid())::text = user_id)
+    WITH CHECK ((select auth.uid())::text = user_id);
 
 CREATE POLICY "User isolate tabs" ON public.tabs
     FOR ALL TO authenticated
-    USING ((select auth.uid())::text = user_id OR user_id = 'default')
-    WITH CHECK ((select auth.uid())::text = user_id OR user_id = 'default');
+    USING ((select auth.uid())::text = user_id)
+    WITH CHECK ((select auth.uid())::text = user_id);
 
 CREATE POLICY "User isolate monthly dues" ON public.monthly_dues
     FOR ALL TO authenticated
-    USING ((select auth.uid())::text = user_id OR user_id = 'default')
-    WITH CHECK ((select auth.uid())::text = user_id OR user_id = 'default');
+    USING ((select auth.uid())::text = user_id)
+    WITH CHECK ((select auth.uid())::text = user_id);
 
 CREATE POLICY "User isolate presets" ON public.quick_presets
     FOR ALL TO authenticated
-    USING ((select auth.uid())::text = user_id OR user_id = 'default')
-    WITH CHECK ((select auth.uid())::text = user_id OR user_id = 'default');
+    USING ((select auth.uid())::text = user_id)
+    WITH CHECK ((select auth.uid())::text = user_id);
 
 CREATE POLICY "User isolate budget" ON public.budget_config
     FOR ALL TO authenticated
-    USING ((select auth.uid())::text = user_id OR user_id = 'default')
-    WITH CHECK ((select auth.uid())::text = user_id OR user_id = 'default');
+    USING ((select auth.uid())::text = user_id)
+    WITH CHECK ((select auth.uid())::text = user_id);
 
 -- Feedback policies: Users insert & read their own, Admin reads all
 CREATE POLICY "User isolate feedbacks" ON public.feedbacks

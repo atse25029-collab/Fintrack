@@ -376,71 +376,6 @@ export async function fetchAllCloudData(): Promise<{
         .eq('user_id', userId),
     ]);
 
-    // One-time adoption fallback for newly-logged in users with unclaimed default/offline data
-    if (!isDefault) {
-      if (!txRes.data || txRes.data.length === 0) {
-        const fallbackTx = await client
-          .from('transactions')
-          .select('id, type, amount, category, description, date, time, timestamp, payment_method, is_monthly_due, notes, created_at, user_id')
-          .eq('user_id', 'default')
-          .order('date', { ascending: false })
-          .limit(250);
-        if (fallbackTx.data && fallbackTx.data.length > 0) {
-          txRes = fallbackTx;
-          const ids = fallbackTx.data.map((r) => r.id);
-          client.from('transactions').update({ user_id: userId }).in('id', ids).then();
-        }
-      }
-
-      const hasValidWallet = walletRes.data && walletRes.data.length > 0 &&
-        (Number(walletRes.data[0]?.cash_in_hand) > 0 || Number(walletRes.data[0]?.account_balance) > 0);
-
-      if (!hasValidWallet) {
-        const fallbackWallet = await client
-          .from('wallets')
-          .select('user_id, cash_in_hand, account_balance, last_updated')
-          .eq('user_id', 'default')
-          .maybeSingle();
-
-        if (fallbackWallet.data && (Number(fallbackWallet.data.cash_in_hand) > 0 || Number(fallbackWallet.data.account_balance) > 0)) {
-          walletRes.data = [fallbackWallet.data];
-          client.from('wallets').upsert({
-            user_id: userId,
-            cash_in_hand: Number(fallbackWallet.data.cash_in_hand),
-            account_balance: Number(fallbackWallet.data.account_balance),
-            last_updated: Date.now(),
-          }).then();
-        }
-      }
-
-      if (!tabsRes.data || tabsRes.data.length === 0) {
-        const fallbackTabs = await client
-          .from('tabs')
-          .select('id, person_name, amount, type, description, date, status, settled_at, notes, created_at, user_id')
-          .eq('user_id', 'default')
-          .order('created_at', { ascending: false })
-          .limit(100);
-        if (fallbackTabs.data && fallbackTabs.data.length > 0) {
-          tabsRes = fallbackTabs;
-          const ids = fallbackTabs.data.map((r) => r.id);
-          client.from('tabs').update({ user_id: userId }).in('id', ids).then();
-        }
-      }
-
-      if (!duesRes.data || duesRes.data.length === 0) {
-        const fallbackDues = await client
-          .from('monthly_dues')
-          .select('id, title, amount, category, payment_method, due_day_of_month, notes, status, last_paid_date, created_at, user_id')
-          .eq('user_id', 'default')
-          .order('due_day_of_month', { ascending: true });
-        if (fallbackDues.data && fallbackDues.data.length > 0) {
-          duesRes = fallbackDues;
-          const ids = fallbackDues.data.map((r) => r.id);
-          client.from('monthly_dues').update({ user_id: userId }).in('id', ids).then();
-        }
-      }
-    }
-
     if (duesRes.error) {
       console.error('Error fetching dues from Supabase:', duesRes.error);
       throw new Error(`Failed to fetch monthly dues: ${duesRes.error.message}`);
@@ -470,51 +405,26 @@ export async function fetchAllCloudData(): Promise<{
       }));
     }
 
+    // Strict multi-tenant isolation: only parse the current authenticated user's wallet
     if (walletRes.data && Array.isArray(walletRes.data) && walletRes.data.length > 0) {
-      // Find wallet for current authenticated user
-      const userWallet = walletRes.data.find((w) => w.user_id === userId);
-      // Find default/unassigned wallet
-      const defaultWallet = walletRes.data.find((w) => w.user_id === 'default' || !w.user_id);
-
-      // Prioritize the wallet that actually has positive money balances
-      let chosenWallet = userWallet || defaultWallet;
-      if (
-        userWallet &&
-        defaultWallet &&
-        Number(userWallet.cash_in_hand) === 0 &&
-        Number(userWallet.account_balance) === 0 &&
-        (Number(defaultWallet.cash_in_hand) > 0 || Number(defaultWallet.account_balance) > 0)
-      ) {
-        chosenWallet = defaultWallet;
-        // Claim and sync the positive balances to the user's account in Supabase
-        client.from('wallets').upsert({
-          user_id: userId,
-          cash_in_hand: Number(defaultWallet.cash_in_hand),
-          account_balance: Number(defaultWallet.account_balance),
-          last_updated: Date.now(),
-        }).then();
-      } else if (!userWallet && defaultWallet && userId !== 'default') {
-        client.from('wallets').upsert({
-          user_id: userId,
-          cash_in_hand: Number(defaultWallet.cash_in_hand),
-          account_balance: Number(defaultWallet.account_balance),
-          last_updated: Date.now(),
-        }).then();
-      }
-
-      if (chosenWallet) {
-        result.wallets = {
-          cashInHand: isNaN(Number(chosenWallet.cash_in_hand)) ? 0 : Number(chosenWallet.cash_in_hand),
-          accountBalance: isNaN(Number(chosenWallet.account_balance)) ? 0 : Number(chosenWallet.account_balance),
-          lastUpdated: Number(chosenWallet.last_updated) || Date.now(),
-        };
-      }
+      const userWallet = walletRes.data[0];
+      result.wallets = {
+        cashInHand: isNaN(Number(userWallet.cash_in_hand)) ? 0 : Number(userWallet.cash_in_hand),
+        accountBalance: isNaN(Number(userWallet.account_balance)) ? 0 : Number(userWallet.account_balance),
+        lastUpdated: Number(userWallet.last_updated) || Date.now(),
+      };
     } else if (walletRes.data && !Array.isArray(walletRes.data)) {
       const singleWallet = walletRes.data as any;
       result.wallets = {
         cashInHand: isNaN(Number(singleWallet.cash_in_hand)) ? 0 : Number(singleWallet.cash_in_hand),
         accountBalance: isNaN(Number(singleWallet.account_balance)) ? 0 : Number(singleWallet.account_balance),
         lastUpdated: Number(singleWallet.last_updated) || Date.now(),
+      };
+    } else {
+      result.wallets = {
+        cashInHand: 0,
+        accountBalance: 0,
+        lastUpdated: Date.now(),
       };
     }
 

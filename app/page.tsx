@@ -51,6 +51,7 @@ import {
   getCurrentUser,
   subscribeToAuthChanges,
   fetchAllCloudData,
+  signOutUser,
 } from '@/lib/supabase/dbService';
 
 import {
@@ -135,6 +136,8 @@ export default function HomePage() {
     return false;
   };
 
+  const currentUserRef = React.useRef<User | null>(null);
+
   const loadUserDataFromCloud = useCallback(async () => {
     try {
       const cloudData = await fetchAllCloudData();
@@ -145,23 +148,48 @@ export default function HomePage() {
           );
           setTransactions(validTxs);
           setLocalTransactions(validTxs);
+        } else {
+          setTransactions([]);
+          setLocalTransactions([]);
         }
+
         if (cloudData.wallets) {
           setWallets(cloudData.wallets);
           setLocalWallets(cloudData.wallets);
+        } else {
+          setWallets(DEFAULT_WALLETS);
+          setLocalWallets(DEFAULT_WALLETS);
         }
+
         if (cloudData.tabs && cloudData.tabs.length > 0) {
           setTabs(cloudData.tabs);
           setLocalTabs(cloudData.tabs);
+        } else {
+          setTabs([]);
+          setLocalTabs([]);
         }
+
         if (cloudData.dues && cloudData.dues.length > 0) {
           setDues(cloudData.dues);
           setLocalDues(cloudData.dues);
+        } else {
+          setDues([]);
+          setLocalDues([]);
         }
+
         if (cloudData.presets && cloudData.presets.length > 0) {
           setPresets(cloudData.presets);
           setLocalQuickPresets(cloudData.presets);
         }
+      } else {
+        setTransactions([]);
+        setLocalTransactions([]);
+        setWallets(DEFAULT_WALLETS);
+        setLocalWallets(DEFAULT_WALLETS);
+        setTabs([]);
+        setLocalTabs([]);
+        setDues([]);
+        setLocalDues([]);
       }
     } catch (err) {
       console.warn('Error loading cloud user data:', err);
@@ -187,6 +215,16 @@ export default function HomePage() {
           refresh_token: refreshToken,
         });
         if (!error && data?.user) {
+          // Reset local cache before loading new user
+          setTransactions([]);
+          setLocalTransactions([]);
+          setWallets(DEFAULT_WALLETS);
+          setLocalWallets(DEFAULT_WALLETS);
+          setTabs([]);
+          setLocalTabs([]);
+          setDues([]);
+          setLocalDues([]);
+          currentUserRef.current = data.user;
           setCurrentUser(data.user);
           loadUserDataFromCloud();
         }
@@ -213,6 +251,7 @@ export default function HomePage() {
     let mounted = true;
     getCurrentUser().then((user) => {
       if (mounted) {
+        currentUserRef.current = user;
         setCurrentUser(user);
         setIsAuthChecking(false);
         if (user) {
@@ -223,6 +262,18 @@ export default function HomePage() {
 
     const sub = subscribeToAuthChanges((user) => {
       if (mounted) {
+        if (user?.id !== currentUserRef.current?.id) {
+          // User switched or logged out: immediately reset local state
+          setTransactions([]);
+          setLocalTransactions([]);
+          setWallets(DEFAULT_WALLETS);
+          setLocalWallets(DEFAULT_WALLETS);
+          setTabs([]);
+          setLocalTabs([]);
+          setDues([]);
+          setLocalDues([]);
+        }
+        currentUserRef.current = user;
         setCurrentUser(user);
         setIsAuthChecking(false);
         if (user) {
@@ -238,6 +289,8 @@ export default function HomePage() {
   }, [loadUserDataFromCloud]);
 
   const handleSignOutClean = useCallback(() => {
+    signOutUser().catch(() => {});
+    currentUserRef.current = null;
     setCurrentUser(null);
     setLocalTransactions([]);
     setLocalWallets(DEFAULT_WALLETS);
