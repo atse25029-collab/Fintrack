@@ -334,14 +334,26 @@ export async function fetchAllCloudData(): Promise<{
     const user = await getCurrentUser();
     const userId = user?.id || 'default';
 
+    const userFilter = userId !== 'default'
+      ? `user_id.eq.${userId},user_id.eq.default,user_id.is.null`
+      : 'user_id.eq.default,user_id.is.null';
+
     const [txRes, walletRes, tabsRes, duesRes, presetsRes, budgetRes] = await Promise.all([
-      client.from('transactions').select('*').eq('user_id', userId).order('date', { ascending: false }),
-      client.from('wallets').select('*').eq('user_id', userId).maybeSingle(),
-      client.from('tabs').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
-      client.from('monthly_dues').select('*').eq('user_id', userId).order('due_day_of_month', { ascending: true }),
-      client.from('quick_presets').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
-      client.from('budget_config').select('*').eq('user_id', userId).maybeSingle(),
+      client.from('transactions').select('*').or(userFilter).order('date', { ascending: false }),
+      client.from('wallets').select('*').or(userFilter).maybeSingle(),
+      client.from('tabs').select('*').or(userFilter).order('created_at', { ascending: false }),
+      client.from('monthly_dues').select('*').or(userFilter).order('due_day_of_month', { ascending: true }),
+      client.from('quick_presets').select('*').or(userFilter).order('created_at', { ascending: true }),
+      client.from('budget_config').select('*').or(userFilter).maybeSingle(),
     ]);
+
+    if (userId !== 'default' && txRes.data && txRes.data.length > 0) {
+      const unclaimed = txRes.data.filter((r) => r.user_id === 'default' || !r.user_id);
+      if (unclaimed.length > 0) {
+        const ids = unclaimed.map((r) => r.id);
+        client.from('transactions').update({ user_id: userId }).in('id', ids).then();
+      }
+    }
 
     if (duesRes.error) {
       console.error('Error fetching dues from Supabase:', duesRes.error);
