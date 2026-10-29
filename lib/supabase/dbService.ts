@@ -23,6 +23,11 @@ export async function getCurrentUser(): Promise<User | null> {
   if (!client) return null;
   try {
     const {
+      data: { session },
+    } = await client.auth.getSession();
+    if (session?.user) return session.user;
+
+    const {
       data: { user },
     } = await client.auth.getUser();
     return user;

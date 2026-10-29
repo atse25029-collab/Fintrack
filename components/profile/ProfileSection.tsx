@@ -54,6 +54,8 @@ import {
 import FeedbackCard from './FeedbackCard';
 
 interface ProfileSectionProps {
+  currentUser?: SupabaseUser | null;
+  onAuthChange?: (user: SupabaseUser | null) => void;
   transactions: Transaction[];
   wallets: WalletBalances;
   tabs: TabItem[];
@@ -74,6 +76,8 @@ interface ProfileSectionProps {
 }
 
 export default function ProfileSection({
+  currentUser: propUser,
+  onAuthChange,
   transactions,
   wallets,
   tabs,
@@ -85,7 +89,14 @@ export default function ProfileSection({
   onOpenStatement,
   onSignOut,
 }: ProfileSectionProps) {
-  const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<SupabaseUser | null>(propUser || null);
+
+  // Sync internal state when parent propUser changes
+  useEffect(() => {
+    if (propUser !== undefined) {
+      setCurrentUser(propUser);
+    }
+  }, [propUser]);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -115,7 +126,10 @@ export default function ProfileSection({
     });
 
     const sub = subscribeToAuthChanges((user) => {
-      if (mounted) setCurrentUser(user);
+      if (mounted) {
+        setCurrentUser(user);
+        onAuthChange?.(user);
+      }
     });
 
     return () => {

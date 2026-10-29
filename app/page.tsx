@@ -1290,6 +1290,8 @@ export default function HomePage() {
               className="w-full max-w-full overflow-hidden"
             >
               <ProfileSection
+                currentUser={currentUser}
+                onAuthChange={(u) => setCurrentUser(u)}
                 transactions={transactions}
                 wallets={wallets}
                 tabs={tabs}

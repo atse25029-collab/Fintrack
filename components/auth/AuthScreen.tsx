@@ -97,13 +97,33 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         const { data, error } = await signUpWithEmail(email, password);
         if (error) throw error;
         const authUser = data?.user;
-        if (authUser) {
+        const authSession = data?.session;
+
+        if (authSession && authUser) {
           setSuccessMsg('Account created successfully! Welcome to FinTrack.');
           setTimeout(() => {
             onAuthSuccess(authUser);
           }, 800);
+        } else if (authUser) {
+          // Attempt immediate login in case auto-confirmation is active
+          try {
+            const loginRes = await signInWithEmail(email, password);
+            const verifiedUser = loginRes.data?.user;
+            if (verifiedUser && loginRes.data?.session) {
+              setSuccessMsg('Account created and logged in! Welcome to FinTrack.');
+              setTimeout(() => {
+                onAuthSuccess(verifiedUser);
+              }, 800);
+              return;
+            }
+          } catch {
+            // Requires email confirmation
+          }
+          setSuccessMsg('Account created! Check your email inbox to verify, then sign in.');
+          setMode('signin');
         } else {
           setSuccessMsg('Verification link sent! Check your email inbox to verify.');
+          setMode('signin');
         }
       } else {
         const { data, error } = await signInWithEmail(email, password);
