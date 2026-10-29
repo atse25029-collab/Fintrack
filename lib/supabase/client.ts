@@ -3,6 +3,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 const STORAGE_URL_KEY = 'fintrack_supabase_url';
 const STORAGE_ANON_KEY = 'fintrack_supabase_anon_key';
 const DEFAULT_SUPABASE_URL = 'https://etojohnmcqrpkuqvmkpv.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0b2pvaG5tY3FycGt1cXZta3B2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg0NDI4MDMsImV4cCI6MjEwNDAxODgwM30.EYLA2pRoDP9sD17GqgXbCJ-FE7sOtLud7k63jDoPG0k';
 
 export function getSupabaseUrl(): string {
   const envUrl =
@@ -39,7 +41,7 @@ export function getSupabaseAnonKey(): string {
     }
   }
 
-  return '';
+  return DEFAULT_SUPABASE_ANON_KEY;
 }
 
 export function checkIsSupabaseConfigured(): boolean {
