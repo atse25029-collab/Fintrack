@@ -232,35 +232,58 @@ DECLARE
     admin_uid TEXT;
     def_cash NUMERIC := 0;
     def_acc NUMERIC := 0;
+    max_cash NUMERIC := 0;
+    max_acc NUMERIC := 0;
 BEGIN
     SELECT id::text INTO admin_uid FROM auth.users WHERE email = 'smohamedfarook2024@gmail.com' LIMIT 1;
     
     IF admin_uid IS NOT NULL THEN
-        -- Get positive funds from default if any
+        -- 1. Check if 'default' has the funds
         SELECT COALESCE(cash_in_hand, 0), COALESCE(account_balance, 0) INTO def_cash, def_acc 
         FROM public.wallets WHERE user_id = 'default' LIMIT 1;
 
-        -- Ensure admin's wallet has the rightful balances
+        -- 2. If 'default' is 0, check if another account adopted the positive funds
+        SELECT COALESCE(MAX(cash_in_hand), 0), COALESCE(MAX(account_balance), 0) INTO max_cash, max_acc
+        FROM public.wallets
+        WHERE user_id <> admin_uid;
+
+        IF def_cash = 0 AND max_cash > 0 THEN
+            def_cash := max_cash;
+        END IF;
+        IF def_acc = 0 AND max_acc > 0 THEN
+            def_acc := max_acc;
+        END IF;
+
+        -- 3. Restore the rightful positive funds into admin_uid's wallet
         INSERT INTO public.wallets (user_id, cash_in_hand, account_balance, last_updated)
         VALUES (admin_uid, COALESCE(def_cash, 0), COALESCE(def_acc, 0), (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT)
         ON CONFLICT (user_id) DO UPDATE 
-        SET cash_in_hand = CASE WHEN public.wallets.cash_in_hand = 0 AND def_cash > 0 THEN def_cash ELSE public.wallets.cash_in_hand END,
-            account_balance = CASE WHEN public.wallets.account_balance = 0 AND def_acc > 0 THEN def_acc ELSE public.wallets.account_balance END;
+        SET cash_in_hand = GREATEST(public.wallets.cash_in_hand, def_cash),
+            account_balance = GREATEST(public.wallets.account_balance, def_acc),
+            last_updated = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT;
 
-        -- Assign default transactions, tabs, dues to admin
+        -- 4. Assign default transactions, tabs, dues to admin
         UPDATE public.transactions SET user_id = admin_uid WHERE user_id = 'default' OR user_id IS NULL;
         UPDATE public.tabs SET user_id = admin_uid WHERE user_id = 'default' OR user_id IS NULL;
         UPDATE public.monthly_dues SET user_id = admin_uid WHERE user_id = 'default' OR user_id IS NULL;
-        UPDATE public.quick_presets SET user_id = admin_uid WHERE user_id = 'default' OR user_id IS NULL;
-        UPDATE public.budget_config SET user_id = admin_uid WHERE user_id = 'default' OR user_id IS NULL;
         
-        -- Delete default row so no other user can ever touch it
+        -- 5. Handle budget_config safely without primary key collision
+        IF EXISTS (SELECT 1 FROM public.budget_config WHERE user_id = admin_uid) THEN
+            DELETE FROM public.budget_config WHERE user_id = 'default' OR user_id IS NULL;
+        ELSE
+            UPDATE public.budget_config SET user_id = admin_uid WHERE user_id = 'default' OR user_id IS NULL;
+        END IF;
+
+        -- 6. Clean up default quick presets safely
+        DELETE FROM public.quick_presets WHERE user_id = 'default' OR user_id IS NULL;
+
+        -- 7. Delete default row so no other user can ever touch it
         DELETE FROM public.wallets WHERE user_id = 'default';
         DELETE FROM public.transactions WHERE user_id = 'default';
         DELETE FROM public.tabs WHERE user_id = 'default';
         DELETE FROM public.monthly_dues WHERE user_id = 'default';
 
-        -- Reset any non-admin accounts that had the default balance accidentally copied to them
+        -- 8. Reset any non-admin accounts that had the default balance accidentally copied to them
         -- if they have zero transactions of their own
         UPDATE public.wallets
         SET cash_in_hand = 0, account_balance = 0
