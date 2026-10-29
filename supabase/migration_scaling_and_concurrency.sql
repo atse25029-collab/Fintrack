@@ -4,6 +4,72 @@
 -- https://supabase.com/dashboard/project/_/sql/new
 -- =========================================================
 
+-- 0. Clean up legacy RLS policies to prevent column alteration locks
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "Users can manage their own transactions" ON public.transactions;
+    DROP POLICY IF EXISTS "Users can manage their own wallets" ON public.wallets;
+    DROP POLICY IF EXISTS "Users can manage their own tabs" ON public.tabs;
+    DROP POLICY IF EXISTS "Users can manage their own monthly dues" ON public.monthly_dues;
+    DROP POLICY IF EXISTS "Users can manage their own quick presets" ON public.quick_presets;
+    DROP POLICY IF EXISTS "Users can manage their own budget config" ON public.budget_config;
+    DROP POLICY IF EXISTS "Allow all for transactions" ON public.transactions;
+    DROP POLICY IF EXISTS "Allow all for wallets" ON public.wallets;
+    DROP POLICY IF EXISTS "Allow all for tabs" ON public.tabs;
+    DROP POLICY IF EXISTS "Allow all for monthly_dues" ON public.monthly_dues;
+    DROP POLICY IF EXISTS "Allow all for quick_presets" ON public.quick_presets;
+    DROP POLICY IF EXISTS "Allow all for budget_config" ON public.budget_config;
+    DROP POLICY IF EXISTS "Allow all for analytics_snapshots" ON public.analytics_snapshots;
+    DROP POLICY IF EXISTS "Allow all for feedbacks" ON public.feedbacks;
+    DROP POLICY IF EXISTS "User isolate transactions" ON public.transactions;
+    DROP POLICY IF EXISTS "User isolate wallets" ON public.wallets;
+    DROP POLICY IF EXISTS "User isolate tabs" ON public.tabs;
+    DROP POLICY IF EXISTS "User isolate monthly dues" ON public.monthly_dues;
+    DROP POLICY IF EXISTS "User isolate presets" ON public.quick_presets;
+    DROP POLICY IF EXISTS "User isolate budget" ON public.budget_config;
+    DROP POLICY IF EXISTS "User isolate feedbacks" ON public.feedbacks;
+    DROP POLICY IF EXISTS "Admin view feedbacks" ON public.feedbacks;
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END $$;
+
+-- Ensure user_id column is TEXT across all tables (supporting both auth.uid() and fallback defaults)
+DO $$
+BEGIN
+    ALTER TABLE public.transactions ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE public.wallets ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE public.tabs ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE public.monthly_dues ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE public.quick_presets ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE public.budget_config ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
 -- 1. Fix Transactions Type Check & Ensure transfer_direction Column
 ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_type_check;
 ALTER TABLE public.transactions ADD CONSTRAINT transactions_type_check 

@@ -126,12 +126,33 @@ export default function ProfileSection({
 
   // Notifications init
   useEffect(() => {
-    if (isNotificationSupported()) {
-      getNotificationPermission().then((perm) => setNotifPermission(perm));
-      setNotifPrefs(getNotificationPreferences());
-    } else {
-      setNotifPermission('unsupported');
-    }
+    let mounted = true;
+    const checkPerm = async () => {
+      const supported = isNotificationSupported();
+      if (supported) {
+        const perm = await getNotificationPermission();
+        if (mounted) {
+          setNotifPermission(perm);
+          setNotifPrefs(getNotificationPreferences());
+        }
+      } else {
+        // Retry shortly in case native bridge was initializing
+        setTimeout(async () => {
+          if (!mounted) return;
+          if (isNotificationSupported()) {
+            const perm = await getNotificationPermission();
+            setNotifPermission(perm);
+            setNotifPrefs(getNotificationPreferences());
+          } else {
+            setNotifPermission('unsupported');
+          }
+        }, 600);
+      }
+    };
+    checkPerm();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const handleRequestPermission = async () => {

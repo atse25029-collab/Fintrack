@@ -47,14 +47,12 @@ async function ensureNotificationChannel() {
 
 export function isNotificationSupported(): boolean {
   if (typeof window === 'undefined') return false;
-  if (Capacitor.isNativePlatform()) return true;
+  if (Capacitor.isNativePlatform() || Capacitor.isPluginAvailable('LocalNotifications')) return true;
   return 'Notification' in window;
 }
 
 export async function getNotificationPermission(): Promise<NotificationPermission | 'unsupported'> {
-  if (!isNotificationSupported()) return 'unsupported';
-
-  if (Capacitor.isNativePlatform()) {
+  if (Capacitor.isNativePlatform() || Capacitor.isPluginAvailable('LocalNotifications')) {
     try {
       const status = await LocalNotifications.checkPermissions();
       if (status.display === 'granted') return 'granted';
@@ -65,7 +63,11 @@ export async function getNotificationPermission(): Promise<NotificationPermissio
     }
   }
 
-  return Notification.permission;
+  if (typeof window !== 'undefined' && 'Notification' in window) {
+    return Notification.permission;
+  }
+
+  return 'unsupported';
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {

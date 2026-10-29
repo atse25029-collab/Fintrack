@@ -1,12 +1,18 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   signInWithEmail,
   signUpWithEmail,
   signInWithGoogle,
 } from '@/lib/supabase/dbService';
+import {
+  getSupabaseUrl,
+  getSupabaseAnonKey,
+  checkIsSupabaseConfigured,
+  setSupabaseCredentials,
+} from '@/lib/supabase/client';
 import {
   Mail,
   Lock,
@@ -17,6 +23,9 @@ import {
   Loader2,
   Sparkles,
   TrendingUp,
+  Database,
+  KeyRound,
+  ExternalLink,
 } from 'lucide-react';
 import { User } from '@supabase/supabase-js';
 
@@ -33,8 +42,47 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // Runtime Supabase configuration state
+  const [isConfigured, setIsConfigured] = useState<boolean>(true);
+  const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
+  const [customUrl, setCustomUrl] = useState<string>(getSupabaseUrl());
+  const [customKey, setCustomKey] = useState<string>(getSupabaseAnonKey());
+  const [configSaving, setConfigSaving] = useState<boolean>(false);
+
+  useEffect(() => {
+    const configured = checkIsSupabaseConfigured();
+    setIsConfigured(configured);
+    if (!configured) {
+      setShowConfigModal(true);
+    }
+  }, []);
+
+  const handleSaveConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    setConfigSaving(true);
+    setErrorMsg(null);
+
+    const success = setSupabaseCredentials(customUrl, customKey);
+    setConfigSaving(false);
+
+    if (success) {
+      setIsConfigured(true);
+      setShowConfigModal(false);
+      setSuccessMsg('Supabase connected successfully! You can now sign in.');
+      setTimeout(() => setSuccessMsg(null), 3500);
+    } else {
+      setErrorMsg('Invalid Supabase configuration. Please enter a valid https:// URL and Anon Key.');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!checkIsSupabaseConfigured()) {
+      setShowConfigModal(true);
+      setErrorMsg('Please configure your Supabase Anon Key first.');
+      return;
+    }
+
     if (!email || !password) {
       setErrorMsg('Please enter both email and password.');
       return;
@@ -69,20 +117,34 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
         }
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Authentication failed. Please verify credentials.');
+      const msg = err.message || 'Authentication failed. Please verify credentials.';
+      setErrorMsg(msg);
+      if (msg.includes('Supabase is not configured')) {
+        setShowConfigModal(true);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
+    if (!checkIsSupabaseConfigured()) {
+      setShowConfigModal(true);
+      setErrorMsg('Please configure your Supabase Anon Key first.');
+      return;
+    }
+
     setGoogleLoading(true);
     setErrorMsg(null);
     try {
       const { error } = await signInWithGoogle();
       if (error) throw error;
     } catch (err: any) {
-      setErrorMsg(err.message || 'Google sign-in could not be initiated.');
+      const msg = err.message || 'Google sign-in could not be initiated.';
+      setErrorMsg(msg);
+      if (msg.includes('Supabase is not configured')) {
+        setShowConfigModal(true);
+      }
       setGoogleLoading(false);
     }
   };
@@ -278,9 +340,108 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
           </button>
         </form>
 
-        <p className="text-center text-[11px] text-zinc-500 font-mono">
-          Currency locked to Indian Rupee (₹) &bull; Light Theme
-        </p>
+        {/* Configuration Modal / Panel */}
+        <AnimatePresence>
+          {showConfigModal && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-black" />
+                  <span className="text-xs font-bold text-zinc-950">
+                    Supabase Database Setup
+                  </span>
+                </div>
+                {isConfigured && (
+                  <button
+                    type="button"
+                    onClick={() => setShowConfigModal(false)}
+                    className="text-[10px] text-zinc-500 hover:text-black font-semibold px-2 py-0.5 rounded cursor-pointer"
+                  >
+                    Close
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-zinc-600 leading-relaxed">
+                Connect your cloud database to sync data and authenticate users across Android & Web.
+              </p>
+
+              <form onSubmit={handleSaveConfig} className="space-y-2.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-mono uppercase text-zinc-600 font-semibold">
+                    Supabase Project URL
+                  </label>
+                  <input
+                    type="url"
+                    required
+                    value={customUrl}
+                    onChange={(e) => setCustomUrl(e.target.value)}
+                    placeholder="https://your-project.supabase.co"
+                    className="w-full px-2.5 py-1.5 bg-white border border-zinc-300 rounded-lg text-xs text-zinc-900 focus:outline-none focus:ring-1 focus:ring-black"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-mono uppercase text-zinc-600 font-semibold">
+                      Anon / Publishable API Key
+                    </label>
+                    <a
+                      href="https://supabase.com/dashboard/project/etojohnmcqrpkuqvmkpv/settings/api"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"
+                    >
+                      <span>Find Key</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  </div>
+                  <div className="relative">
+                    <KeyRound className="w-3.5 h-3.5 text-zinc-400 absolute left-2.5 top-2 pointer-events-none" />
+                    <input
+                      type="password"
+                      required
+                      value={customKey}
+                      onChange={(e) => setCustomKey(e.target.value)}
+                      placeholder="sb_publishable_... or eyJhbGciOi..."
+                      className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-zinc-300 rounded-lg text-xs font-mono text-zinc-900 focus:outline-none focus:ring-1 focus:ring-black"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={configSaving}
+                  className="w-full py-2 bg-black hover:bg-zinc-800 text-white text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
+                >
+                  {configSaving ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Save &amp; Connect Database</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="flex items-center justify-between text-[11px] text-zinc-500 font-mono">
+          <span>Currency: ₹ (INR) &bull; Light Theme</span>
+          <button
+            type="button"
+            onClick={() => setShowConfigModal(!showConfigModal)}
+            className="text-zinc-600 hover:text-black underline cursor-pointer text-[10px]"
+          >
+            {showConfigModal ? 'Hide Config' : 'Database Settings'}
+          </button>
+        </div>
       </motion.div>
     </div>
   );
