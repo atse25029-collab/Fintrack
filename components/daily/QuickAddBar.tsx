@@ -2,13 +2,14 @@
 
 import React from 'react';
 import { motion } from 'motion/react';
-import { QuickPreset, PaymentMethod } from '@/lib/types';
+import { QuickPreset, PaymentMethod, WalletBalances } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 import { getPresetIcon } from './QuickPresetModal';
-import { ArrowDownLeft, ArrowUpRight, SlidersHorizontal, MessageSquare, ArrowRightLeft } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, SlidersHorizontal, MessageSquare, ArrowRightLeft, AlertCircle } from 'lucide-react';
 
 interface QuickAddBarProps {
   presets: QuickPreset[];
+  wallets?: WalletBalances;
   onOpenPresetManager: () => void;
   onQuickAdd: (item: {
     description: string;
@@ -24,6 +25,7 @@ interface QuickAddBarProps {
 
 export default function QuickAddBar({
   presets,
+  wallets,
   onOpenPresetManager,
   onQuickAdd,
   onOpenCustomModal,
@@ -55,31 +57,43 @@ export default function QuickAddBar({
           const Icon = getPresetIcon(item.iconName);
           const isIncome = item.type === 'income';
           const isCash = item.paymentMethod === 'Cash';
+          const availableFunds = isCash
+            ? Math.max(0, wallets?.cashInHand ?? 0)
+            : Math.max(0, wallets?.accountBalance ?? 0);
+          const isInsufficient = !isIncome && item.amount > availableFunds;
 
           return (
             <motion.button
               key={item.id}
               whileHover={{ scale: 1.015 }}
               whileTap={{ scale: 0.96 }}
-              onClick={() =>
+              onClick={() => {
+                if (isInsufficient) {
+                  alert(
+                    `Cannot log "${item.label}": Insufficient ${item.paymentMethod} balance!\nAvailable: ${formatCurrency(availableFunds)}\nRequired: ${formatCurrency(item.amount)}\n\nThis transaction cannot pass.`
+                  );
+                  return;
+                }
                 onQuickAdd({
                   description: item.label,
                   amount: item.amount,
                   category: item.category,
                   type: item.type || 'expense',
                   paymentMethod: item.paymentMethod,
-                })
-              }
+                });
+              }}
               className={`p-2.5 sm:p-3 rounded-xl border transition-all text-left flex items-center justify-between gap-2 group cursor-pointer shadow-2xs ${
-                isIncome
-                  ? 'bg-zinc-50 hover:bg-zinc-100/80 border-zinc-200'
+                isInsufficient
+                  ? 'bg-red-50/20 border-red-200/80 hover:bg-red-50/40 opacity-80'
                   : 'bg-zinc-50 hover:bg-zinc-100/80 border-zinc-200'
               }`}
             >
               <div className="flex items-center gap-2 min-w-0">
                 <div
                   className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                    isIncome ? 'bg-black text-white' : 'bg-black text-white'
+                    isInsufficient
+                      ? 'bg-red-500 text-white'
+                      : 'bg-black text-white'
                   }`}
                 >
                   <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2]" />
@@ -89,12 +103,20 @@ export default function QuickAddBar({
                     {item.label}
                   </div>
                   <div className="flex items-center gap-1 text-[10px] text-zinc-600 leading-none mt-0.5">
-                    <span
-                      className={`inline-block w-1.5 h-1.5 rounded-full ${
-                        isCash ? 'bg-black' : 'bg-black'
-                      }`}
-                    />
-                    <span>{item.paymentMethod}</span>
+                    {isInsufficient ? (
+                      <span className="text-[9px] font-bold text-red-600 bg-red-100/80 px-1 py-0.5 rounded leading-none">
+                        Low Bal (₹{availableFunds.toFixed(0)})
+                      </span>
+                    ) : (
+                      <>
+                        <span
+                          className={`inline-block w-1.5 h-1.5 rounded-full ${
+                            isCash ? 'bg-black' : 'bg-black'
+                          }`}
+                        />
+                        <span>{item.paymentMethod}</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

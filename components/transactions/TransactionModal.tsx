@@ -2,16 +2,17 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Transaction, TransactionType, PaymentMethod, DEFAULT_CATEGORIES } from '@/lib/types';
-import { getExactRealTime } from '@/lib/utils';
-import { X, ArrowDownLeft, ArrowUpRight, ArrowRightLeft, Check } from 'lucide-react';
+import { Transaction, TransactionType, PaymentMethod, DEFAULT_CATEGORIES, WalletBalances } from '@/lib/types';
+import { getExactRealTime, formatCurrency } from '@/lib/utils';
+import { X, ArrowDownLeft, ArrowUpRight, ArrowRightLeft, Check, AlertCircle } from 'lucide-react';
 
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (tx: Partial<Transaction>) => void;
+  onSave: (tx: Partial<Transaction>) => boolean | void;
   initialData?: Transaction | null;
   defaultType?: TransactionType;
+  currentWallets?: WalletBalances;
 }
 
 export default function TransactionModal({
@@ -20,6 +21,7 @@ export default function TransactionModal({
   onSave,
   initialData,
   defaultType = 'expense',
+  currentWallets,
 }: TransactionModalProps) {
   const [type, setType] = useState<TransactionType>(defaultType);
   const [amount, setAmount] = useState<string>('');
@@ -29,6 +31,20 @@ export default function TransactionModal({
   const [time, setTime] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('UPI / Bank');
   const [notes, setNotes] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+
+  // Compute available funds and insufficiency check
+  const isCash = paymentMethod === 'Cash';
+  const availableFunds = isCash
+    ? Math.max(0, currentWallets?.cashInHand ?? 0)
+    : Math.max(0, currentWallets?.accountBalance ?? 0);
+
+  const parsedAmount = parseFloat(amount) || 0;
+  const isInsufficient = (type === 'expense' || type === 'transfer') && parsedAmount > availableFunds;
+
+  useEffect(() => {
+    setError(null);
+  }, [amount, paymentMethod, type]);
 
   useEffect(() => {
     if (initialData) {
@@ -66,14 +82,23 @@ export default function TransactionModal({
     e.preventDefault();
     const parsedAmount = parseFloat(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      alert('Please enter a valid amount greater than 0');
+      setError('Please enter a valid amount greater than 0');
       return;
+    }
+
+    if (type === 'expense' || type === 'transfer') {
+      if (parsedAmount > availableFunds) {
+        setError(
+          `Insufficient ${isCash ? 'Cash in Hand' : 'UPI / Account'} balance! Available: ${formatCurrency(availableFunds)}, Required: ${formatCurrency(parsedAmount)}. This transaction cannot pass.`
+        );
+        return;
+      }
     }
 
     const realTime = getExactRealTime();
     const resolvedType = type;
 
-    onSave({
+    const saved = onSave({
       ...(initialData?.id ? { id: initialData.id } : {}),
       type: resolvedType,
       amount: parsedAmount,
@@ -86,6 +111,10 @@ export default function TransactionModal({
       transferDirection: initialData?.transferDirection || (resolvedType === 'transfer' ? (paymentMethod === 'Cash' ? 'account_to_cash' : 'cash_to_account') : undefined),
       notes: notes.trim(),
     });
+
+    if (saved === false) {
+      return;
+    }
 
     onClose();
   };
@@ -196,9 +225,31 @@ export default function TransactionModal({
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Error banner if rejected */}
+              {(error || (isInsufficient && parsedAmount > 0)) && (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <p className="font-semibold">Insufficient Balance</p>
+                    <p className="text-[11px] text-red-600">
+                      Available in {isCash ? 'Cash in Hand' : 'UPI / Account'}: <span className="font-bold font-mono">{formatCurrency(availableFunds)}</span>.
+                      Required: <span className="font-bold font-mono">{formatCurrency(parsedAmount)}</span>.
+                      This transaction cannot pass.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Amount input (₹) */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-700">Amount (₹)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-zinc-700">Amount (₹)</label>
+                  {(type === 'expense' || type === 'transfer') && (
+                    <span className={`text-[11px] font-mono font-medium ${isInsufficient ? 'text-red-600 font-bold' : 'text-zinc-500'}`}>
+                      Available: {formatCurrency(availableFunds)}
+                    </span>
+                  )}
+                </div>
                 <div className="relative">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-mono font-bold text-zinc-400">
                     ₹
@@ -211,7 +262,11 @@ export default function TransactionModal({
                     placeholder="0.00"
                     required
                     autoFocus
-                    className="w-full pl-8 pr-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-base font-mono font-bold text-zinc-950 focus:outline-none focus:ring-2 focus:ring-black focus:bg-white"
+                    className={`w-full pl-8 pr-3.5 py-2.5 rounded-xl text-base font-mono font-bold focus:outline-none focus:ring-2 transition-colors ${
+                      isInsufficient && parsedAmount > 0
+                        ? 'bg-red-50/50 border border-red-400 text-red-950 focus:ring-red-500'
+                        : 'bg-zinc-50 border border-zinc-200 text-zinc-950 focus:ring-black focus:bg-white'
+                    }`}
                   />
                 </div>
               </div>
@@ -307,12 +362,23 @@ export default function TransactionModal({
                 </motion.button>
                 <motion.button
                   type="submit"
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.96 }}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-4 bg-black text-white text-xs font-semibold rounded-xl hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
+                  disabled={isInsufficient && parsedAmount > 0}
+                  whileHover={!(isInsufficient && parsedAmount > 0) ? { scale: 1.01 } : {}}
+                  whileTap={!(isInsufficient && parsedAmount > 0) ? { scale: 0.96 } : {}}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-4 text-xs font-semibold rounded-xl transition-all shadow-xs ${
+                    isInsufficient && parsedAmount > 0
+                      ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed border border-zinc-300'
+                      : 'bg-black text-white hover:bg-zinc-800 cursor-pointer'
+                  }`}
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>{initialData ? 'Update Transaction' : 'Save Transaction'}</span>
+                  <span>
+                    {isInsufficient && parsedAmount > 0
+                      ? `Insufficient Balance (Available: ${formatCurrency(availableFunds)})`
+                      : initialData
+                      ? 'Update Transaction'
+                      : 'Save Transaction'}
+                  </span>
                 </motion.button>
               </div>
             </form>

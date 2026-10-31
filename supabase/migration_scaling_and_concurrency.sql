@@ -116,8 +116,16 @@ CREATE INDEX IF NOT EXISTS idx_presets_user_created ON public.quick_presets(user
 CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_user_id ON public.wallets(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_user_id ON public.budget_config(user_id);
 
--- 4. Atomic Stored Procedure for High-Concurrency Wallet Updates
--- Prevents lost updates / race conditions during rapid concurrent transactions via row-level locking (FOR UPDATE)
+-- 4. Atomic Stored Procedure for High-Concurrency Wallet Updates with Insufficient Funds Guard
+-- Rejects any negative deduction if cash or account balance is insufficient
+DO $$
+BEGIN
+    ALTER TABLE public.wallets DROP CONSTRAINT IF EXISTS wallets_non_negative_balances;
+    ALTER TABLE public.wallets ADD CONSTRAINT wallets_non_negative_balances 
+        CHECK (cash_in_hand >= 0 AND account_balance >= 0);
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.adjust_wallet_balance(
     p_user_id TEXT,
     p_cash_delta NUMERIC,
@@ -128,18 +136,28 @@ DECLARE
 BEGIN
     SELECT * INTO w FROM public.wallets WHERE user_id = p_user_id FOR UPDATE;
     IF NOT FOUND THEN
+        IF p_cash_delta < 0 OR p_account_delta < 0 THEN
+            RAISE EXCEPTION 'Insufficient wallet balance. Cannot deduct from an empty wallet.';
+        END IF;
         INSERT INTO public.wallets (user_id, cash_in_hand, account_balance, last_updated)
         VALUES (
             p_user_id,
-            GREATEST(0, p_cash_delta),
-            GREATEST(0, p_account_delta),
+            p_cash_delta,
+            p_account_delta,
             (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
         )
         RETURNING * INTO w;
     ELSE
+        IF (w.cash_in_hand + p_cash_delta) < 0 THEN
+            RAISE EXCEPTION 'Insufficient cash in hand! Available: %, Required: %', w.cash_in_hand, ABS(p_cash_delta);
+        END IF;
+        IF (w.account_balance + p_account_delta) < 0 THEN
+            RAISE EXCEPTION 'Insufficient account/UPI balance! Available: %, Required: %', w.account_balance, ABS(p_account_delta);
+        END IF;
+
         UPDATE public.wallets
-        SET cash_in_hand = GREATEST(0, cash_in_hand + p_cash_delta),
-            account_balance = GREATEST(0, account_balance + p_account_delta),
+        SET cash_in_hand = cash_in_hand + p_cash_delta,
+            account_balance = account_balance + p_account_delta,
             last_updated = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
         WHERE user_id = p_user_id
         RETURNING * INTO w;

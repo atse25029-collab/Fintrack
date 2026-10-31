@@ -401,6 +401,54 @@ export default function HomePage() {
     };
   }, [dues, tabs]);
 
+  // Comprehensive Insufficient Funds Guard
+  const validateSufficientFunds = useCallback(
+    (
+      amount: number,
+      type: TransactionType,
+      paymentMethod: PaymentMethod,
+      currentWallets: WalletBalances,
+      transferDirection?: TransferDirection
+    ): { valid: boolean; message: string } => {
+      if (type === 'income') return { valid: true, message: '' };
+
+      const isCash = paymentMethod === 'Cash';
+      const cash = Math.max(0, currentWallets?.cashInHand ?? 0);
+      const account = Math.max(0, currentWallets?.accountBalance ?? 0);
+
+      if (type === 'transfer') {
+        const isAccToCash = transferDirection === 'account_to_cash';
+        if (isAccToCash && amount > account) {
+          return {
+            valid: false,
+            message: `Cannot transfer: Insufficient Account Balance!\nAvailable: ₹${account.toFixed(2)}\nRequired: ₹${amount.toFixed(2)}.`,
+          };
+        } else if (!isAccToCash && amount > cash) {
+          return {
+            valid: false,
+            message: `Cannot transfer: Insufficient Cash in Hand!\nAvailable: ₹${cash.toFixed(2)}\nRequired: ₹${amount.toFixed(2)}.`,
+          };
+        }
+        return { valid: true, message: '' };
+      }
+
+      if (isCash && amount > cash) {
+        return {
+          valid: false,
+          message: `Transaction Blocked: Insufficient Cash in Hand!\nAvailable: ₹${cash.toFixed(2)}\nRequired: ₹${amount.toFixed(2)}\n\nThis transaction cannot pass.`,
+        };
+      } else if (!isCash && amount > account) {
+        return {
+          valid: false,
+          message: `Transaction Blocked: Insufficient UPI / Account Balance!\nAvailable: ₹${account.toFixed(2)}\nRequired: ₹${amount.toFixed(2)}\n\nThis transaction cannot pass.`,
+        };
+      }
+
+      return { valid: true, message: '' };
+    },
+    []
+  );
+
   // Wallet balance impact calculator
   const applyWalletImpact = (
     currentWallets: WalletBalances,
@@ -477,10 +525,11 @@ export default function HomePage() {
 
   // --- Transactions Handlers ---
   const handleSaveTransaction = useCallback(
-    (data: Partial<Transaction>) => {
+    (data: Partial<Transaction>): boolean => {
       const realTime = getExactRealTime();
       const now = Date.now();
       let updatedWallets: WalletBalances = getLocalWallets();
+      let isSuccess = true;
 
       setTransactions((prev) => {
         let updated: Transaction[];
@@ -489,32 +538,37 @@ export default function HomePage() {
           // Editing existing transaction
           const existing = prev.find((t) => t.id === data.id);
           if (existing) {
-            // Revert old impact on wallet
-            setWallets((w) => {
-              const currentW = w || getLocalWallets();
-              const reverted = applyWalletImpact(
-                currentW,
-                existing.amount,
-                existing.type,
-                existing.paymentMethod,
-                'revert',
-                existing.transferDirection
-              );
-              const newAmount = typeof data.amount === 'number' ? data.amount : existing.amount;
-              const newType = data.type || existing.type;
-              const newMethod = data.paymentMethod || existing.paymentMethod;
-              const newTransferDir = data.transferDirection || existing.transferDirection;
-              const finalWallets = applyWalletImpact(reverted, newAmount, newType, newMethod, 'apply', newTransferDir);
-              setLocalWallets(finalWallets);
-              fetch('/api/wallets', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(finalWallets),
-              }).catch(() => {});
-              syncWalletsToCloud(finalWallets).catch(() => {});
-              updatedWallets = finalWallets;
-              return finalWallets;
-            });
+            const currentW = getLocalWallets();
+            const reverted = applyWalletImpact(
+              currentW,
+              existing.amount,
+              existing.type,
+              existing.paymentMethod,
+              'revert',
+              existing.transferDirection
+            );
+            const newAmount = typeof data.amount === 'number' ? data.amount : existing.amount;
+            const newType = data.type || existing.type;
+            const newMethod = data.paymentMethod || existing.paymentMethod;
+            const newTransferDir = data.transferDirection || existing.transferDirection;
+
+            const fundCheck = validateSufficientFunds(newAmount, newType, newMethod, reverted, newTransferDir);
+            if (!fundCheck.valid) {
+              alert(fundCheck.message);
+              isSuccess = false;
+              return prev;
+            }
+
+            const finalWallets = applyWalletImpact(reverted, newAmount, newType, newMethod, 'apply', newTransferDir);
+            setWallets(finalWallets);
+            setLocalWallets(finalWallets);
+            fetch('/api/wallets', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(finalWallets),
+            }).catch(() => {});
+            syncWalletsToCloud(finalWallets).catch(() => {});
+            updatedWallets = finalWallets;
           }
 
           updated = prev.map((t) =>
@@ -531,37 +585,47 @@ export default function HomePage() {
           );
         } else {
           // New transaction
+          const txAmount = data.amount || 0;
+          const txType = data.type || 'expense';
+          const txMethod = data.paymentMethod || 'UPI / Bank';
+          const txTransferDir = data.transferDirection;
+          const currentW = getLocalWallets();
+
+          const fundCheck = validateSufficientFunds(txAmount, txType, txMethod, currentW, txTransferDir);
+          if (!fundCheck.valid) {
+            alert(fundCheck.message);
+            isSuccess = false;
+            return prev;
+          }
+
           const newTx: Transaction = {
             id: `tx-${now}-${Math.random().toString(36).substring(2, 7)}`,
-            type: data.type || 'expense',
-            amount: data.amount || 0,
+            type: txType,
+            amount: txAmount,
             category: data.category || 'Miscellaneous',
             description: data.description || 'Quick Expense',
             date: data.date || realTime.date,
             time: data.time || realTime.time,
             timestamp: realTime.timestamp,
-            paymentMethod: data.paymentMethod || 'UPI / Bank',
+            paymentMethod: txMethod,
             notes: data.notes || '',
             isMonthlyDue: data.isMonthlyDue || false,
-            transferDirection: data.transferDirection,
+            transferDirection: txTransferDir,
             createdAt: now,
             synced: false,
           };
 
           // Update wallet balances
-          setWallets((w) => {
-            const currentW = w || getLocalWallets();
-            const next = applyWalletImpact(currentW, newTx.amount, newTx.type, newTx.paymentMethod, 'apply', newTx.transferDirection);
-            setLocalWallets(next);
-            fetch('/api/wallets', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(next),
-            }).catch(() => {});
-            syncWalletsToCloud(next).catch(() => {});
-            updatedWallets = next;
-            return next;
-          });
+          const next = applyWalletImpact(currentW, newTx.amount, newTx.type, newTx.paymentMethod, 'apply', newTx.transferDirection);
+          setWallets(next);
+          setLocalWallets(next);
+          fetch('/api/wallets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(next),
+          }).catch(() => {});
+          syncWalletsToCloud(next).catch(() => {});
+          updatedWallets = next;
 
           updated = [newTx, ...prev];
         }
@@ -569,22 +633,52 @@ export default function HomePage() {
         // Enforce no pre-Sep 4 2026 transactions
         const filtered = updated.filter((tx) => !tx.date || tx.date >= '2026-09-04');
         setLocalTransactions(filtered);
-
-        // Async server backup & Supabase cloud sync
-        fetch('/api/transactions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data.id ? data : updated[0]),
-        }).catch(() => {});
-        syncTransactionToCloud(data.id ? (updated.find((t) => t.id === data.id) || updated[0]) : updated[0]).catch(() => {});
-
         return filtered;
       });
 
+      if (!isSuccess) return false;
+
+      // Sync new transaction to cloud
+      if (!data.id) {
+        const txAmount = data.amount || 0;
+        const txType = data.type || 'expense';
+        const txMethod = data.paymentMethod || 'UPI / Bank';
+        const newTxForCloud: Transaction = {
+          id: `tx-${now}`,
+          type: txType,
+          amount: txAmount,
+          category: data.category || 'Miscellaneous',
+          description: data.description || 'Quick Expense',
+          date: data.date || realTime.date,
+          time: data.time || realTime.time,
+          timestamp: realTime.timestamp,
+          paymentMethod: txMethod,
+          notes: data.notes || '',
+          isMonthlyDue: data.isMonthlyDue || false,
+          transferDirection: data.transferDirection,
+          createdAt: now,
+          synced: false,
+        };
+        fetch('/api/transactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newTxForCloud),
+        }).catch(() => {});
+        syncTransactionToCloud(newTxForCloud).catch(() => {});
+      } else {
+        fetch('/api/transactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        }).catch(() => {});
+        syncTransactionToCloud(data as Transaction).catch(() => {});
+      }
+
       setIsTxModalOpen(false);
       setEditingTx(null);
+      return true;
     },
-    []
+    [validateSufficientFunds]
   );
 
   const handleDeleteTransaction = useCallback(
@@ -708,6 +802,13 @@ export default function HomePage() {
       type: 'expense' | 'income';
       paymentMethod: PaymentMethod;
     }) => {
+      const currentW = getLocalWallets();
+      const fundCheck = validateSufficientFunds(item.amount, item.type, item.paymentMethod, currentW);
+      if (!fundCheck.valid) {
+        alert(fundCheck.message);
+        return;
+      }
+
       const realTime = getExactRealTime();
       const now = Date.now();
 
@@ -752,7 +853,7 @@ export default function HomePage() {
       }).catch(() => {});
       syncTransactionToCloud(newTx).catch(() => {});
     },
-    []
+    [validateSufficientFunds]
   );
 
   // --- Monthly Dues Handlers ---
@@ -799,6 +900,13 @@ export default function HomePage() {
     (due: MonthlyDue) => {
       const today = getLocalDateString(new Date());
       const realTime = getExactRealTime();
+      const currentW = getLocalWallets();
+
+      const fundCheck = validateSufficientFunds(due.amount, 'expense', due.paymentMethod, currentW);
+      if (!fundCheck.valid) {
+        alert(`Cannot mark "${due.title}" as paid!\n\n${fundCheck.message}`);
+        return;
+      }
 
       setDues((prev) => {
         const updated = prev.map((d) =>
@@ -826,7 +934,7 @@ export default function HomePage() {
         notes: `Paid & auto-recorded on ${today} at ${realTime.time}`,
       });
     },
-    [handleSaveTransaction]
+    [handleSaveTransaction, validateSufficientFunds]
   );
 
   const handleDeleteDue = useCallback(
@@ -892,6 +1000,15 @@ export default function HomePage() {
       const now = Date.now();
       const realTime = getExactRealTime();
 
+      if (recordTransaction && tab.type !== 'owed_to_you') {
+        const currentW = getLocalWallets();
+        const fundCheck = validateSufficientFunds(tab.amount, 'expense', paymentMethod, currentW);
+        if (!fundCheck.valid) {
+          alert(`Cannot settle debt of ₹${tab.amount.toFixed(2)} to ${tab.personName}!\n\n${fundCheck.message}`);
+          return;
+        }
+      }
+
       setTabs((prev) => {
         const updated = prev.map((t) =>
           t.id === tab.id
@@ -929,7 +1046,7 @@ export default function HomePage() {
         }
       }
     },
-    [handleSaveTransaction]
+    [handleSaveTransaction, validateSufficientFunds]
   );
 
   const handleDeleteTab = useCallback(
@@ -1225,6 +1342,7 @@ export default function HomePage() {
 
                 <QuickAddBar
                   presets={presets}
+                  wallets={wallets}
                   onOpenPresetManager={() => setIsPresetModalOpen(true)}
                   onQuickAdd={handleQuickAdd}
                   onOpenCustomModal={(type) => {
@@ -1407,6 +1525,7 @@ export default function HomePage() {
         onSave={handleSaveTransaction}
         initialData={editingTx}
         defaultType={txModalDefaultType}
+        currentWallets={wallets}
       />
 
       <ExportImportModal
